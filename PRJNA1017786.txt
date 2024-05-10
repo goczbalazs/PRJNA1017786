@@ -1,0 +1,1910 @@
+#!/bin/bash
+export PATH=$PATH:/mnt/c/Users/gocz.balazs/Documents/tools/FastQC
+
+# Creating the folder for the QC results
+mkdir qc
+
+
+# Running fastqc
+for f in *fastq 
+do 
+  fastqc -t 12 $f -o qc
+done
+
+# Running Trimmomatic####
+TRIM='/mnt/c/Users/gocz.balazs/Documents/tools/Trimmomatic-0.39/trimmomatic-0.39.jar'
+
+for f in *.fastq
+do 
+  o=${f/'.fastq'/'_trimmed.fastq'}
+  log=${f/'.fastq'/'_trim.out.log'}
+  java -jar $TRIM SE -threads 12 $f $o LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36 2> $log
+  echo complete ${f}
+done
+
+###Running Cutadapt####
+for f in *_trimmed.fastq
+do
+log=${f/'.fastq'/'_trim.out.log'}
+    cutadapt -j 12 -a AGATCGGAAGAGCACACGTCTGAACTCCAGTCA --minimum-length 36 -o ${f/'_trimmed.fastq'/'_trimmed_final.fastq'} $f > $log
+	echo complete ${f}
+done
+
+
+for f in *_trimmed_final.fastq
+do
+  root=${f/'_final.fastq'/''} 
+STAR -- genomeDir /mnt/c/Users/gocz.balazs/Documents/tools/ref -- readFilesIn $f -- outFileNamePrefix 'FIRST_GRCm39_107_'$root -- outReadsUnmapped Fastx -- outSAMtype BAM SortedByCoordinate -- outMultimapperOrder Random -- genomeLoad LoadAndKeep --limitBAMsortRAM 40000000000 -- runThreadN 12
+done
+
+for f in *_trimmed_final.fastq
+do
+  root=${f/'_final.fastq'/''} 
+STAR -- genomeDir /mnt/c/Users/gocz.balazs/Documents/tools/ref -- readFilesIn $f -- outFileNamePrefix 'Remove_'$root -- outReadsUnmapped Fastx -- outSAMtype BAM SortedByCoordinate -- outMultimapperOrder Random -- runThreadN 12 -- genomeLoad Remove --limitBAMsortRAM 40000000000
+done
+
+for f in *_trimmed_final.fastq
+do
+  root=${f/'.fastq'/''}
+  STAR -- genomeDir /mnt/c/Users/gocz.balazs/Documents/tools/ref -- sjdbFileChrStartEnd *SJ.out.tab -- readFilesIn $f -- outFileNamePrefix 'final_bams/Final_GRCm39_107_'$root -- outReadsUnmapped Fastx -- outSAMtype BAM SortedByCoordinate -- outMultimapperOrder Random -- runThreadN 12
+done
+
+cd final_bams
+
+mkdir feature_counts_2_strand_no_multimappers
+
+featureCounts -O -s 2 -T 12 -a /mnt/c/Users/gocz.balazs/Documents/tools/Mus_musculus.GRCm39.107.gtf -o feature_counts_2_strand_no_multimappers/featureCounts_GRCm39.107_CPU_1000.txt Final_GRCm39_107*bam
+
+annotationGTF='/mnt/c/Users/gocz.balazs/Documents/tools/Mus_musculus.GRCm39.107_COLLAPSED.gtf'
+
+for b in *_trimmed_finalAligned.sortedByCoord.out.bam
+do
+  s=${b/'_trimmed_finalAligned.sortedByCoord.out.bam'/''}
+  s=${s/'GRCm39_107_'/''}
+ /mnt/c/Users/gocz.balazs/Documents/tools/rnaseqc $annotationGTF $b rnaseqcRes --sample=$s --unpaired
+done
+
+####end of bash####
+
+####Codes in R#####
+
+files <- list.files(pattern = '.txt')    
+for(i in files) {
+  x <-read_delim(i,                     delim = "\t", escape_double = FALSE, 
+                 col_types = cols(Chr = col_skip(), Start = col_skip(), 
+                                  End = col_skip(), Strand = col_skip(), 
+                                  Length = col_skip()), trim_ws = TRUE, 
+                 skip = 1)
+  assign(i,x)  
+}
+
+###Opening and modifying featureCount objects#######
+
+Septum_kiss_data <- featureCounts_GRCm39.109_Soma_projekt_2.0.6.txt %>% 
+  rename_at(vars(contains('GRCm39_109_')), list( ~ gsub('GRCm39_109_', '', .))) %>%  
+  rename_at(vars(contains('_trimmed_finalAligned.sortedByCoord.out.bam')), list( ~ gsub('_trimmed_finalAligned.sortedByCoord.out.bam', '', .))) %>%  
+  rename_at(vars(contains('-')), list( ~ gsub('-', '_', .))) %>% 
+  dplyr::select(Geneid, S2, S8, S13, S14, S3, S11, S12) %>% 
+  dplyr::rename(S2_E2 = S2) %>%
+  dplyr::rename(S8_E2 = S8) %>%
+  dplyr::rename(S13_E2 = S13) %>%
+  dplyr::rename(S14_E2 = S14) %>%
+  dplyr::rename(S3_Veh = S3) %>%
+  dplyr::rename(S11_Veh = S11) %>%
+  dplyr::rename(S12_Veh = S12)
+
+POA_shannon_kiss_data <- featureCounts_GRCm39.109_Shannon_POA_no_multi.txt %>% 
+  rename_at(vars(contains('Final_GRCm39_109_')), list( ~ gsub('Final_GRCm39_109_', '', .))) %>%  
+  rename_at(vars(contains('_trimmed_finalAligned.sortedByCoord.out.bam')), list( ~ gsub('_trimmed_finalAligned.sortedByCoord.out.bam', '', .))) %>%  
+  rename_at(vars(contains('-')), list( ~ gsub('-', '_', .))) %>%
+  dplyr::rename(AVPV_GDX_CRE1 = SRR13842633) %>%
+  dplyr::rename(AVPV_GDX_CRE2 = SRR13842634) %>%
+  dplyr::rename(AVPV_GDX_CRE3 = SRR13842635) %>%
+  dplyr::rename(AVPV_E2_CRE1 = SRR13842636) %>% 
+  dplyr::rename(AVPV_E2_CRE2 = SRR13842637) %>%
+  dplyr::rename(AVPV_E2_CRE3 = SRR13842638) %>%
+  dplyr::rename(AVPV_GDX_CRE4 = SRR13842639) %>% 
+  dplyr::select(Geneid, AVPV_E2_CRE1, AVPV_E2_CRE2, AVPV_E2_CRE3, AVPV_GDX_CRE1, AVPV_GDX_CRE2, AVPV_GDX_CRE3, AVPV_GDX_CRE4)
+
+ARC_kiss_data <- featureCounts_GRCm39.109_ARC_kiss_no_multi.txt %>% 
+  rename_at(vars(contains('GRCm39_109_')), list( ~ gsub('GRCm39_109_', '', .))) %>%  
+  rename_at(vars(contains('_trimmed_finalAligned.sortedByCoord.out.bam')), list( ~ gsub('_trimmed_finalAligned.sortedByCoord.out.bam', '', .))) %>%  
+  rename_at(vars(contains('-')), list( ~ gsub('-', '_', .))) %>% 
+  dplyr::select("Geneid", "3_OIL_ARC", "4_OIL_ARC", "7_OIL_ARC", "2_E2_ARC", "5_E2_ARC", "6_E2_ARC") %>% 
+  dplyr::rename(Oil_3_ARC = "3_OIL_ARC") %>%
+  dplyr::rename(Oil_4_ARC = "4_OIL_ARC") %>%
+  dplyr::rename(Oil_7_ARC = "7_OIL_ARC") %>%
+  dplyr::rename(E2_2_ARC = "2_E2_ARC") %>%
+  dplyr::rename(E2_5_ARC = "5_E2_ARC") %>%
+  dplyr::rename(E2_6_ARC = "6_E2_ARC")
+
+
+POA_kiss_data <- featureCounts_GRCm39.109_POA_kiss_no_multi.txt %>% 
+  rename_at(vars(contains('GRCm39_109_')), list( ~ gsub('GRCm39_109_', '', .))) %>%  
+  rename_at(vars(contains('_trimmed_finalAligned.sortedByCoord.out.bam')), list( ~ gsub('_trimmed_finalAligned.sortedByCoord.out.bam', '', .))) %>%  
+  rename_at(vars(contains('-')), list( ~ gsub('-', '_', .))) %>% 
+  dplyr::select(Geneid, SRR19578839, SRR19578840, SRR19578841, SRR19578842, SRR19578843, SRR19578844) %>% 
+  dplyr::rename(Oil_8_POA = SRR19578839) %>%
+  dplyr::rename(Oil_7_POA = SRR19578840) %>%
+  dplyr::rename(Oil_4_POA = SRR19578841) %>%
+  dplyr::rename(E2_6_POA = SRR19578842) %>%
+  dplyr::rename(E2_5_POA = SRR19578843) %>%
+  dplyr::rename(E2_2_POA = SRR19578844)
+
+MeA_kiss_data <- featureCounts_GRCm39.109_kauffmann_ME.txt %>% 
+  rename_at(vars(contains('GRCm39_109_')), list( ~ gsub('GRCm39_109_', '', .))) %>%  
+  rename_at(vars(contains('_trimmedAligned.sortedByCoord.out.bam')), list( ~ gsub('_trimmedAligned.sortedByCoord.out.bam', '', .))) %>%  
+  rename_at(vars(contains('-')), list( ~ gsub('-', '_', .))) %>% 
+  dplyr::select(Geneid, SRR23370803, SRR23370805,SRR23370807, SRR23370809, SRR23370811, SRR23370813) %>% 
+  dplyr::rename(MeA_E2_1 = SRR23370803) %>%
+  dplyr::rename(MeA_E2_2 = SRR23370805) %>%
+  dplyr::rename(MeA_E2_3 = SRR23370807) %>%
+  dplyr::rename(MeA_Veh_4 = SRR23370809) %>% 
+  dplyr::rename(MeA_Veh_5 = SRR23370811) %>%
+  dplyr::rename(MeA_Veh_6 = SRR23370813)
+
+#####Coverage of the RNA seq result#####
+coverage_Septum <- Septum_kiss %>%
+  t() %>% 
+  as.data.frame()
+
+
+coverage_Septum_list <- split(coverage_Septum, rownames(coverage_Septum))
+
+Count_Septum <- as.data.frame(apply(coverage_Septum, 1, function(x) length(x[x>=5])))
+
+coverage_Septum_t <- Count_Septum %>% 
+  rename(Gene_number = `apply(coverage_Septum, 1, function(x) length(x[x >= 5]))`) %>% 
+  rownames_to_column(var='Name') %>% 
+  arrange(Name) %>% 
+  mutate(treatment = c((rep(c("DHT", "E2", "Intakt", "KO", "ORX", "T"), each=4))))
+
+
+####Revealing the real 6 samples from MeA data#####
+
+MeA_kiss <- MeA_kiss_data %>% 
+  data.frame(row.names = 1)
+
+Septum_kiss <- Septum_kiss_data %>% 
+  data.frame(row.names = 1)
+
+info_MeA_kiss <- read.table("MeA_kiss_info.txt", header = T, sep = "\t")
+info_MeA_kiss$Treatment = factor(info_MeA_kiss$Treatment, levels = c("E2", "Vehicle"))
+
+dds_MeA_kiss <- DESeqDataSetFromMatrix(countData =MeA_kiss, colData = info_MeA_kiss, design = ~Treatment)
+
+dds_MeA_kiss$Treatment <- relevel(dds_MeA_kiss$Treatment, ref = "Vehicle")
+
+rlog_MeA_kiss = rlog(dds_MeA_kiss)
+pcadata_MeA_kiss <-plotPCA(rlog_MeA_kiss, intgroup = "Treatment", ntop = 500, returnData=TRUE)
+percentVar_MeA_kiss <- round(100 * attr(pcadata_MeA_kiss, "percentVar"))
+ggplot(pcadata_MeA_kiss, aes(PC1, PC2, color=Treatment, label=name)) +
+  xlab(paste0("PC1: ",percentVar_MeA_kiss[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar_MeA_kiss[2],"% variance")) + 
+  coord_fixed()+
+  geom_jitter()+
+  geom_text_repel()+
+  theme_bw()+
+  ##stat_ellipse(level = 0.8)+
+  ggtitle("My PCA Graph")
+
+MeA_kiss_data_cpm = as.data.frame(cpm(MeA_kiss))
+colnames(MeA_kiss_data_cpm) = paste0('cpm_', colnames(MeA_kiss))
+MeA_kiss_data_cpm <- rownames_to_column(MeA_kiss_data_cpm,var = "Geneid")
+
+Septum_kiss_cpm = as.data.frame(cpm(Septum_kiss))
+colnames(Septum_kiss_cpm) = paste0('cpm_', colnames(Septum_kiss_cpm))
+Septum_kiss_cpm <- rownames_to_column(Septum_kiss_cpm,var = "Geneid")
+
+###Merge MeA and LS data and show in PCA plot####
+
+LS_MeA_kiss_data <- Septum_kiss_data %>% 
+  inner_join(MeA_kiss_data, by = "Geneid") %>% 
+  data.frame(row.names = 1)
+
+info_LS_MeA_kiss <- read.table("LS_MeA_info.txt", header = T, sep = "\t")
+info_LS_MeA_kiss$Treatment = factor(info_LS_MeA_kiss$Treatment, levels = c("E2", "Vehicle"))
+
+dds_LS_MeA_kiss <- DESeqDataSetFromMatrix(countData =LS_MeA_kiss_data, colData = info_LS_MeA_kiss, design = ~Treatment)
+
+dds_LS_MeA_kiss$Treatment <- relevel(dds_LS_MeA_kiss$Treatment, ref = "Vehicle")
+
+rlog_LS_MeA_kiss = rlog(dds_LS_MeA_kiss)
+pcadata_LS_MeA_kiss <-plotPCA(rlog_LS_MeA_kiss, intgroup = "Treatment", ntop = 57010, returnData=TRUE)
+percentVar_LS_MeA_kiss <- round(100 * attr(pcadata_LS_MeA_kiss, "percentVar"))
+ggplot(pcadata_LS_MeA_kiss, aes(PC1, PC2, color=Treatment, label=name)) +
+  xlab(paste0("PC1: ",percentVar_LS_MeA_kiss[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar_LS_MeA_kiss[2],"% variance")) + 
+  coord_fixed()+
+  geom_jitter()+
+  geom_text_repel()+
+  theme_bw()+
+  ##stat_ellipse(level = 0.8)+
+  ggtitle("My PCA Graph")
+
+########Merge MeA, LS, ARC, POA data and show in PCA plot####
+
+All_fifth_kiss_data <- Septum_kiss_data %>% 
+  inner_join(MeA_kiss_data, by = "Geneid") %>%
+  inner_join(ARC_kiss_data, by = "Geneid") %>% 
+  inner_join(POA_kiss_data, by = "Geneid") %>% 
+  inner_join(POA_shannon_kiss_data, by = "Geneid") %>% 
+  data.frame(row.names = 1)
+
+infoAll_fifth_kiss_ <- read.table("All_fifth_kiss_info.txt", header = T, sep = "\t")
+infoAll_fifth_kiss_$Treatment = factor(infoAll_fifth_kiss_$Treatment, levels = c("E2", "Vehicle"))
+
+ddsAll_fifth_kiss_ <- DESeqDataSetFromMatrix(countData =All_fifth_kiss_data, colData = infoAll_fifth_kiss_, design = ~Treatment)
+
+ddsAll_fifth_kiss_$Treatment <- relevel(ddsAll_fifth_kiss_$Treatment, ref = "Vehicle")
+
+rlogAll_fifth_kiss_ = rlog(ddsAll_fifth_kiss_)
+pcadataAll_fifth_kiss_ <-plotPCA(rlogAll_fifth_kiss_, intgroup = "Treatment", ntop = 57010, returnData=TRUE)
+percentVarAll_fifth_kiss_ <- round(100 * attr(pcadataAll_fifth_kiss_, "percentVar"))
+ggplot(pcadataAll_fifth_kiss_, aes(PC1, PC2, color=Treatment, label=name)) +
+  xlab(paste0("PC1: ",percentVarAll_fifth_kiss_[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVarAll_fifth_kiss_[2],"% variance")) + 
+  coord_fixed()+
+  geom_jitter()+
+  geom_text_repel()+
+  theme_bw()+
+  ##stat_ellipse(level = 0.8)+
+  ggtitle("My PCA Graph")
+
+
+###RUV-seq MeA####
+
+filter_MeA <- apply(MeA_kiss, 1, function(x) length(x[x>5])>=2)
+filtered_MeA <- MeA_kiss[filter_MeA,]
+x_MeA <- as.factor((rep(c("E2", "Vehicle"), each=3)))
+set_MeA <- newSeqExpressionSet(as.matrix(filtered_MeA),
+                               phenoData = data.frame(x_MeA, row.names=colnames(filtered_MeA)))
+
+
+library(RColorBrewer)
+colors <- brewer.pal(3, "Set2")
+plotRLE(set_MeA, outline=FALSE, ylim=c(-4, 4), col=colors[x])
+plotPCA(set_MeA, col=colors[x], cex=1.2)
+
+set_MeA <- betweenLaneNormalization(set_MeA, which="upper")
+plotRLE(set_MeA, outline=FALSE, ylim=c(-4, 4), col=colors[x])
+plotPCA(set_MeA, col=colors[x], cex=1.2)
+
+design_MeA <- model.matrix(~x_MeA, data=pData(set_MeA))
+y_MeA <- DGEList(counts=counts(set_MeA), group=x_MeA)
+y_MeA <- calcNormFactors(y_MeA, method="upperquartile")
+y_MeA <- estimateGLMCommonDisp(y_MeA, design_MeA)
+y_MeA <- estimateGLMTagwiseDisp(y_MeA, design_MeA)
+fit_MeA <- glmFit(y_MeA, design_MeA)
+lrt_MeA <- glmLRT(fit_MeA, coef=2)
+top_MeA <- topTags(lrt_MeA, n=nrow(set_MeA))$table
+empirical_MeA <- rownames(set_MeA)[which(!(rownames(set_MeA) %in% rownames(top_MeA)[1:5000]))]
+
+
+set1_MeA <- RUVg(set_MeA, empirical_MeA, k=1)
+pData(set1_MeA)
+
+plotRLE(set1_MeA, outline=FALSE, ylim=c(-4, 4), col=colors[x_MeA])
+plotPCA(set1_MeA, col=colors[x_MeA], cex=1.2)
+
+
+dds_MeA <- DESeqDataSetFromMatrix(countData = counts(set1_MeA),
+                                  colData = pData(set1_MeA),
+                                  design = ~ W_1 + x_MeA)
+
+dds_MeA$x_MeA <- relevel(dds_MeA$x_MeA, ref = "Vehicle")
+dds_MeA <- DESeq(dds_MeA)
+res_MeA <- results(dds_MeA, alpha =0.05)
+summary(res_MeA)
+
+res_MeA_RUVt = as.data.frame(res_MeA)
+res_MeA_RUVt <- rownames_to_column(res_MeA_RUVt,var = "Geneid")
+
+
+Res_MeA_RUV_all <- res_MeA_RUVt %>% 
+  inner_join(ANN_file, by = c("Geneid" = "ensembl_gene_id")) %>%
+  inner_join(MeA_kiss_data_cpm, by = "Geneid") %>%
+  dplyr::select(Geneid, external_gene_name, description, starts_with("cpm_"), log2FoldChange, pvalue, padj) %>%
+  mutate(MeanE2 = rowMeans(.[4:6])) %>% 
+  mutate(MeanVehicle = rowMeans(.[7:9])) %>%
+  dplyr::select(Geneid, external_gene_name, description,starts_with("cpm_"), MeanVehicle, 
+                starts_with("cpm_E"), MeanE2, log2FoldChange, pvalue, padj) %>% 
+  mutate(round(.[, 4:12], digit = 2))
+
+
+#####ARC_kiss vs LSkiss#########
+
+LS_vs_ARC_kiss_data <- Septum_kiss_data %>% 
+  inner_join(ARC_kiss_data, by = "Geneid") %>% 
+  data.frame(row.names = 1)
+
+infoLS_vs_ARC_kiss <- read.table("LS_vs_ARC_info.txt", header = T, sep = "\t")
+infoLS_vs_ARC_kiss$Treatment = factor(infoLS_vs_ARC_kiss$Treatment, levels = c("E2", "Vehicle"))
+
+ddsLS_vs_ARC_kiss <- DESeqDataSetFromMatrix(countData =LS_vs_ARC_kiss_data, colData = infoLS_vs_ARC_kiss, design = ~Treatment)
+
+ddsLS_vs_ARC_kiss$Treatment <- relevel(ddsLS_vs_ARC_kiss$Treatment, ref = "Vehicle")
+
+rlogLS_vs_ARC_kiss = rlog(ddsLS_vs_ARC_kiss)
+pcadataLS_vs_ARC_kiss <-plotPCA(rlogLS_vs_ARC_kiss, intgroup = "Treatment", ntop = 57010, returnData=TRUE)
+percentVarLS_vs_ARC_kiss <- round(100 * attr(pcadataLS_vs_ARC_kiss, "percentVar"))
+ggplot(pcadataLS_vs_ARC_kiss, aes(PC1, PC2, color=Treatment, label=name)) +
+  xlab(paste0("PC1: ",percentVarLS_vs_ARC_kiss[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVarLS_vs_ARC_kiss[2],"% variance")) + 
+  coord_fixed()+
+  geom_jitter()+
+  geom_text_repel()+
+  theme_bw()+
+  ##stat_ellipse(level = 0.8)+
+  ggtitle("My PCA Graph")
+
+######LSvsARC_E2######
+LS_vs_ARC_kiss_E2_data <- LS_vs_ARC_kiss_data %>% 
+  select(S2_E2, S8_E2, S13_E2, S14_E2, E2_2_ARC, E2_5_ARC, E2_6_ARC)
+
+infoLS_vs_ARC_kiss_E2 <- read.table("LS_vs_ARC_E2_info.txt", header = T, sep = "\t")
+infoLS_vs_ARC_kiss_E2$Region = factor(infoLS_vs_ARC_kiss_E2$Region, levels = c("LS", "ARC"))
+
+ddsLS_vs_ARC_kiss_E2 <- DESeqDataSetFromMatrix(countData =LS_vs_ARC_kiss_E2_data, colData = infoLS_vs_ARC_kiss_E2, design = ~Region)
+
+ddsLS_vs_ARC_kiss_E2$Region <- relevel(ddsLS_vs_ARC_kiss_E2$Region, ref = "LS")
+
+dds_LS_vs_ARC_kiss_E2 <- DESeq(ddsLS_vs_ARC_kiss_E2)
+res_dds_LS_vs_ARC_kiss_E2 <- results(dds_LS_vs_ARC_kiss_E2, contrast=c("Region","LS","ARC"), alpha = 0.05)
+summary(res_dds_LS_vs_ARC_kiss_E2)
+res_LS_vs_ARC_kiss_E2t = as.data.frame(res_dds_LS_vs_ARC_kiss_E2)
+res_LS_vs_ARC_kiss_E2t <- rownames_to_column(res_LS_vs_ARC_kiss_E2t,var = "Geneid")
+
+ANN_file= getBM(attributes = c("ensembl_gene_id","external_gene_name", "description"), 
+                       filters = c('ensembl_gene_id') ,
+                       values = res_LS_vs_ARC_kiss_E2t$Geneid,
+                       mart = ensembl109)
+
+LS_vs_ARC_kiss_E2_data_cpm = as.data.frame(cpm(LS_vs_ARC_kiss_E2_data))
+colnames(LS_vs_ARC_kiss_E2_data_cpm) = paste0('cpm_', colnames(LS_vs_ARC_kiss_E2_data_cpm))
+LS_vs_ARC_kiss_E2_data_cpm <- rownames_to_column(LS_vs_ARC_kiss_E2_data_cpm,var = "Geneid")
+
+Res_LS_vs_ARC_kiss_E2_all <- res_LS_vs_ARC_kiss_E2t %>% 
+  inner_join(ANN_file, by = c("Geneid" = "ensembl_gene_id")) %>%
+  inner_join(LS_vs_ARC_kiss_E2_data_cpm, by = "Geneid") %>%
+  dplyr::select(Geneid, external_gene_name, description, starts_with("cpm_"), log2FoldChange, pvalue, padj) %>% 
+  mutate(MeanLS = rowMeans(.[4:7])) %>% 
+  mutate(MeanARC = rowMeans(.[8:10])) %>% 
+  dplyr::select(Geneid, external_gene_name, description, starts_with("cpm_S"),MeanLS,starts_with("cpm_E"),MeanARC, log2FoldChange, pvalue, padj)
+
+
+####LSvsARC_kiss_Oil#####
+
+LS_vs_ARC_kiss_Oil_data <- LS_vs_ARC_kiss_data %>% 
+  dplyr::select(S3_Veh, S11_Veh, S12_Veh, Oil_3_ARC, Oil_4_ARC,Oil_7_ARC)
+
+infoLS_vs_ARC_kiss_Oil <- read.table("LS_vs_ARC_OIL_info.txt", header = T, sep = "\t")
+infoLS_vs_ARC_kiss_Oil$Region = factor(infoLS_vs_ARC_kiss_Oil$Region, levels = c("LS", "ARC"))
+
+ddsLS_vs_ARC_kiss_Oil <- DESeqDataSetFromMatrix(countData =LS_vs_ARC_kiss_Oil_data, colData = infoLS_vs_ARC_kiss_Oil, design = ~Region)
+
+ddsLS_vs_ARC_kiss_Oil$Region <- relevel(ddsLS_vs_ARC_kiss_Oil$Region, ref = "LS")
+
+dds_LS_vs_ARC_kiss_Oil <- DESeq(ddsLS_vs_ARC_kiss_Oil)
+res_dds_LS_vs_ARC_kiss_Oil <- results(dds_LS_vs_ARC_kiss_Oil, contrast=c("Region","LS","ARC"), alpha = 0.05)
+summary(res_dds_LS_vs_ARC_kiss_Oil)
+res_LS_vs_ARC_kiss_Oilt = as.data.frame(res_dds_LS_vs_ARC_kiss_Oil)
+res_LS_vs_ARC_kiss_Oilt <- rownames_to_column(res_LS_vs_ARC_kiss_Oilt,var = "Geneid")
+
+ANN_file= getBM(attributes = c("ensembl_gene_id","external_gene_name", "description"), 
+                filters = c('ensembl_gene_id') ,
+                values = res_LS_vs_ARC_kiss_Oilt$Geneid,
+                mart = ensembl109)
+
+LS_vs_ARC_kiss_Oil_data_cpm = as.data.frame(cpm(LS_vs_ARC_kiss_Oil_data))
+colnames(LS_vs_ARC_kiss_Oil_data_cpm) = paste0('cpm_', colnames(LS_vs_ARC_kiss_Oil_data_cpm))
+LS_vs_ARC_kiss_Oil_data_cpm <- rownames_to_column(LS_vs_ARC_kiss_Oil_data_cpm,var = "Geneid")
+
+Res_LS_vs_ARC_kiss_Oil_all <- res_LS_vs_ARC_kiss_Oilt %>% 
+  inner_join(ANN_file, by = c("Geneid" = "ensembl_gene_id")) %>%
+  inner_join(LS_vs_ARC_kiss_Oil_data_cpm, by = "Geneid") %>%
+  dplyr::select(Geneid, external_gene_name, description, starts_with("cpm_"), log2FoldChange, pvalue, padj) %>% 
+  mutate(MeanLS = rowMeans(.[4:6])) %>% 
+  mutate(MeanARC = rowMeans(.[7:9])) %>% 
+  dplyr::select(Geneid, external_gene_name, description, starts_with("cpm_S"),MeanLS,starts_with("cpm_O"),MeanARC, log2FoldChange, pvalue, padj)
+
+
+#####POA_kiss vs LSkiss#########
+
+LS_vs_POA_kiss_data <- Septum_kiss_data %>% 
+  inner_join(POA_kiss_data, by = "Geneid") %>% 
+  data.frame(row.names = 1)
+
+infoLS_vs_POA_kiss <- read.table("LS_vs_POA_info.txt", header = T, sep = "\t")
+infoLS_vs_POA_kiss$Treatment = factor(infoLS_vs_POA_kiss$Treatment, levels = c("E2", "Vehicle"))
+
+ddsLS_vs_POA_kiss <- DESeqDataSetFromMatrix(countData =LS_vs_POA_kiss_data, colData = infoLS_vs_POA_kiss, design = ~Treatment)
+
+ddsLS_vs_POA_kiss$Treatment <- relevel(ddsLS_vs_POA_kiss$Treatment, ref = "Vehicle")
+
+rlogLS_vs_POA_kiss = rlog(ddsLS_vs_POA_kiss)
+pcadataLS_vs_POA_kiss <-plotPCA(rlogLS_vs_POA_kiss, intgroup = "Treatment", ntop = 57010, returnData=TRUE)
+percentVarLS_vs_POA_kiss <- round(100 * attr(pcadataLS_vs_POA_kiss, "percentVar"))
+ggplot(pcadataLS_vs_POA_kiss, aes(PC1, PC2, color=Treatment, label=name)) +
+  xlab(paste0("PC1: ",percentVarLS_vs_POA_kiss[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVarLS_vs_POA_kiss[2],"% variance")) + 
+  coord_fixed()+
+  geom_jitter()+
+  geom_text_repel()+
+  theme_bw()+
+  ##stat_ellipse(level = 0.8)+
+  ggtitle("My PCA Graph")
+
+#####LSvsPOA_E2######
+LS_vs_POA_kiss_E2_data <- LS_vs_POA_kiss_data %>% 
+  dplyr::select(S2_E2, S8_E2, S13_E2, S14_E2, E2_6_POA, E2_5_POA, E2_2_POA)
+
+infoLS_vs_POA_kiss_E2 <- read.table("LS_vs_POA_E2_info.txt", header = T, sep = "\t")
+infoLS_vs_POA_kiss_E2$Region = factor(infoLS_vs_POA_kiss_E2$Region, levels = c("LS", "POA"))
+
+ddsLS_vs_POA_kiss_E2 <- DESeqDataSetFromMatrix(countData =LS_vs_POA_kiss_E2_data, colData = infoLS_vs_POA_kiss_E2, design = ~Region)
+
+ddsLS_vs_POA_kiss_E2$Region <- relevel(ddsLS_vs_POA_kiss_E2$Region, ref = "LS")
+
+dds_LS_vs_POA_kiss_E2 <- DESeq(ddsLS_vs_POA_kiss_E2)
+res_dds_LS_vs_POA_kiss_E2 <- results(dds_LS_vs_POA_kiss_E2, contrast=c("Region","LS","POA"), alpha = 0.05)
+summary(res_dds_LS_vs_POA_kiss_E2)
+res_LS_vs_POA_kiss_E2t = as.data.frame(res_dds_LS_vs_POA_kiss_E2)
+res_LS_vs_POA_kiss_E2t <- rownames_to_column(res_LS_vs_POA_kiss_E2t,var = "Geneid")
+
+LS_vs_POA_kiss_E2_data_cpm = as.data.frame(cpm(LS_vs_POA_kiss_E2_data))
+colnames(LS_vs_POA_kiss_E2_data_cpm) = paste0('cpm_', colnames(LS_vs_POA_kiss_E2_data_cpm))
+LS_vs_POA_kiss_E2_data_cpm <- rownames_to_column(LS_vs_POA_kiss_E2_data_cpm,var = "Geneid")
+
+Res_LS_vs_POA_kiss_E2_all <- res_LS_vs_POA_kiss_E2t %>% 
+  inner_join(ANN_file, by = c("Geneid" = "ensembl_gene_id")) %>%
+  inner_join(LS_vs_POA_kiss_E2_data_cpm, by = "Geneid") %>%
+  dplyr::select(Geneid, external_gene_name, description, starts_with("cpm_"), log2FoldChange, pvalue, padj) %>% 
+  mutate(MeanLS = rowMeans(.[4:7])) %>% 
+  mutate(MeanPOA = rowMeans(.[8:10])) %>% 
+  dplyr::select(Geneid, external_gene_name, description, starts_with("cpm_S"),MeanLS,starts_with("cpm_E"),MeanPOA, log2FoldChange, pvalue, padj)
+
+
+####LSvsARC_kiss_Oil#####
+
+LS_vs_POA_kiss_Oil_data <- LS_vs_POA_kiss_data %>% 
+  dplyr::select(S3_Veh, S11_Veh, S12_Veh, Oil_8_POA, Oil_7_POA, Oil_4_POA)
+
+infoLS_vs_POA_kiss_Oil <- read.table("LS_vs_POA_OIL_info.txt", header = T, sep = "\t")
+infoLS_vs_POA_kiss_Oil$Region = factor(infoLS_vs_POA_kiss_Oil$Region, levels = c("LS", "POA"))
+
+ddsLS_vs_POA_kiss_Oil <- DESeqDataSetFromMatrix(countData =LS_vs_POA_kiss_Oil_data, colData = infoLS_vs_POA_kiss_Oil, design = ~Region)
+
+ddsLS_vs_POA_kiss_Oil$Region <- relevel(ddsLS_vs_POA_kiss_Oil$Region, ref = "LS")
+
+dds_LS_vs_POA_kiss_Oil <- DESeq(ddsLS_vs_POA_kiss_Oil)
+res_dds_LS_vs_POA_kiss_Oil <- results(dds_LS_vs_POA_kiss_Oil, contrast=c("Region","LS","POA"), alpha = 0.05)
+summary(res_dds_LS_vs_POA_kiss_Oil)
+res_LS_vs_POA_kiss_Oilt = as.data.frame(res_dds_LS_vs_POA_kiss_Oil)
+res_LS_vs_POA_kiss_Oilt <- rownames_to_column(res_LS_vs_POA_kiss_Oilt,var = "Geneid")
+
+ANN_file= getBM(attributes = c("ensembl_gene_id","external_gene_name", "description"), 
+                filters = c('ensembl_gene_id') ,
+                values = res_LS_vs_POA_kiss_Oilt$Geneid,
+                mart = ensembl109)
+
+LS_vs_POA_kiss_Oil_data_cpm = as.data.frame(cpm(LS_vs_POA_kiss_Oil_data))
+colnames(LS_vs_POA_kiss_Oil_data_cpm) = paste0('cpm_', colnames(LS_vs_POA_kiss_Oil_data_cpm))
+LS_vs_POA_kiss_Oil_data_cpm <- rownames_to_column(LS_vs_POA_kiss_Oil_data_cpm,var = "Geneid")
+
+Res_LS_vs_POA_kiss_Oil_all <- res_LS_vs_POA_kiss_Oilt %>% 
+  inner_join(ANN_file, by = c("Geneid" = "ensembl_gene_id")) %>%
+  inner_join(LS_vs_POA_kiss_Oil_data_cpm, by = "Geneid") %>%
+  dplyr::select(Geneid, external_gene_name, description, starts_with("cpm_"), log2FoldChange, pvalue, padj) %>% 
+  mutate(MeanLS = rowMeans(.[4:6])) %>% 
+  mutate(MeanPOA = rowMeans(.[7:9])) %>% 
+  dplyr::select(Geneid, external_gene_name, description, starts_with("cpm_S"),MeanLS,starts_with("cpm_O"),MeanPOA, log2FoldChange, pvalue, padj)
+
+
+####Comparison analysis of two PoAs datasets####
+
+
+Two_POAs_data <- POA_kiss_data %>% 
+  inner_join(POA_shannon_kiss_data, by = "Geneid") %>% 
+  dplyr::select(Geneid, E2_6_POA, E2_5_POA, E2_2_POA, AVPV_E2_CRE1, AVPV_E2_CRE2, AVPV_E2_CRE3) %>%
+  inner_join(ANN_file, by = c("Geneid" = "ensembl_gene_id")) %>% 
+  filter(!grepl("novel gene",description),
+         !grepl("predicted",description),
+         !grepl("RIKEN",description),
+         !grepl("novel trans",description))
+
+Two_POAs_data_filtered <- Two_POAs_data %>%
+  dplyr::select(!c(description, external_gene_name)) %>% 
+  data.frame(row.names = 1)
+
+
+infoTwo_POAs <- read.table("Two_POAs_info.txt", header = T, sep = "\t")
+infoTwo_POAs$Data = factor(infoTwo_POAs$Data, levels = c("Our", "Their"))
+
+ddsTwo_POAs <- DESeqDataSetFromMatrix(countData =Two_POAs_data_filtered, colData = infoTwo_POAs, design = ~Data)
+
+ddsTwo_POAs$Data <- relevel(ddsTwo_POAs$Data, ref = "Our")
+
+dds_Two_POAs <- DESeq(ddsTwo_POAs)
+res_dds_Two_POAs <- results(dds_Two_POAs, contrast=c("Data","Our","Their"), alpha = 0.05)
+summary(res_dds_Two_POAs)
+res_Two_POAst = as.data.frame(res_dds_Two_POAs)
+res_Two_POAst <- rownames_to_column(res_Two_POAst,var = "Geneid")
+
+Two_POAs_data_cpm = as.data.frame(cpm(Two_POAs_data_filtered))
+colnames(Two_POAs_data_cpm) = paste0('cpm_', colnames(Two_POAs_data_cpm))
+Two_POAs_data_cpm <- rownames_to_column(Two_POAs_data_cpm,var = "Geneid")
+
+Res_Two_POAs_all <- res_Two_POAst %>% 
+  inner_join(ANN_file, by = c("Geneid" = "ensembl_gene_id")) %>%
+  inner_join(Two_POAs_data_cpm, by = "Geneid") %>%
+  dplyr::select(Geneid, external_gene_name, description, starts_with("cpm_"), log2FoldChange, pvalue, padj) %>%
+  mutate(round(.[, 4:10], digit = 2)) %>% 
+  mutate(MeanOur = rowMeans(.[4:6])) %>% 
+  mutate(MeanTheir = rowMeans(.[7:9])) %>%
+  filter(MeanTheir>20) %>% 
+  dplyr::select(Geneid, external_gene_name, description, starts_with("cpm_E"),MeanOur,starts_with("cpm_A"),MeanTheir, log2FoldChange, pvalue, padj)
+
+
+##### Septum RUV_seq##########
+
+filter <- apply(Septum_kiss, 1, function(x) length(x[x>5])>=2)
+filtered <- Septum_kiss[filter,]
+x <- as.factor(c((rep("E2", each=4)),(rep("Vehicle", each=3))))
+set <- newSeqExpressionSet(as.matrix(filtered),
+                           phenoData = data.frame(x, row.names=colnames(filtered)))
+
+library(RColorBrewer)
+colors <- brewer.pal(3, "Set2")
+plotRLE(set, outline=FALSE, ylim=c(-4, 4), col=colors[x])
+plotPCA(set, col=colors[x], cex=1.2)
+
+set <- betweenLaneNormalization(set, which="upper")
+plotRLE(set, outline=FALSE, ylim=c(-4, 4), col=colors[x])
+plotPCA(set, col=colors[x], cex=1.2)
+
+design <- model.matrix(~x, data=pData(set))
+y <- DGEList(counts=counts(set), group=x)
+y <- calcNormFactors(y, method="upperquartile")
+y <- estimateGLMCommonDisp(y, design)
+y <- estimateGLMTagwiseDisp(y, design)
+fit <- glmFit(y, design)
+lrt <- glmLRT(fit, coef=2)
+top <- topTags(lrt, n=nrow(set))$table
+empirical <- rownames(set)[which(!(rownames(set) %in% rownames(top)[1:5000]))]
+
+
+set1 <- RUVg(set, empirical, k=1)
+pData(set1)
+
+RUVseq_corrected_reads_septum <- set1 %>%
+  normCounts(.) %>% 
+  as.data.frame(.) %>% 
+  rownames_to_column(., var = "Geneid" )
+
+RUVseq_corrected_reads_septum_cpm = as.data.frame(cpm(RUVseq_corrected_reads_septum))
+colnames(RUVseq_corrected_reads_septum_cpm) = paste0('cpm_', colnames(RUVseq_corrected_reads_septum_cpm))
+RUVseq_corrected_reads_septum_cpm <- rownames_to_column(RUVseq_corrected_reads_septum_cpm,var = "Geneid")
+
+RUVseq_corrected_reads_septum_cpm_sig <- PA_septum %>% 
+  inner_join(RUVseq_corrected_reads_septum_cpm) %>% 
+  dplyr::select(Geneid, contains("Veh"), contains("E2"))
+
+
+plotRLE(set1, outline=FALSE, ylim=c(-4, 4), col=colors[x])
+plotPCA(set1, col=colors[x], cex=1.2)
+
+
+dds <- DESeqDataSetFromMatrix(countData = counts(set1),
+                              colData = pData(set1),
+                              design = ~ W_1 + x)
+
+dds$x <- relevel(dds$x, ref = "Vehicle")
+
+dds <- DESeq(dds)
+res <- results(dds, alpha =0.05)
+summary(res)
+
+res_Septum_RUVt = as.data.frame(res)
+res_Septum_RUVt <- rownames_to_column(res_Septum_RUVt,var = "Geneid")
+
+
+Res_Septum_RUV_all <- res_Septum_RUVt %>% 
+  inner_join(ANN_file, by = c("Geneid" = "ensembl_gene_id")) %>%
+  inner_join(Septum_kiss_cpm, by = "Geneid") %>%
+  dplyr::select(Geneid, external_gene_name, description, starts_with("cpm_"), log2FoldChange, pvalue, padj) %>%
+  mutate(MeanE2 = rowMeans(.[4:7])) %>% 
+  mutate(MeanVehicle = rowMeans(.[8:10])) %>%
+  dplyr::select(Geneid, external_gene_name, description, contains("Veh"),MeanVehicle, contains("E2")
+                ,MeanE2, log2FoldChange, pvalue, padj) %>% 
+  mutate(round(.[, 4:11], digit = 2))
+
+
+##### POA RUV_seq######
+
+POA_kiss <- POA_kiss_data %>% 
+  data.frame(row.names = 1)
+
+POA_kiss_cpm = as.data.frame(cpm(POA_kiss))
+colnames(POA_kiss_cpm) = paste0('cpm_', colnames(POA_kiss_cpm))
+POA_kiss_cpm <- rownames_to_column(POA_kiss_cpm,var = "Geneid")
+
+
+filter_POA <- apply(POA_kiss, 1, function(x) length(x[x>5])>=2)
+filtered_POA <- POA_kiss[filter_POA,]
+x_POA <- as.factor((rep(c("Vehicle","E2"), each=3)))
+set_POA <- newSeqExpressionSet(as.matrix(filtered_POA),
+                           phenoData = data.frame(x_POA, row.names=colnames(filtered_POA)))
+
+
+library(RColorBrewer)
+colors <- brewer.pal(3, "Set2")
+plotRLE(set_POA, outline=FALSE, ylim=c(-4, 4), col=colors[x])
+plotPCA(set_POA, col=colors[x], cex=1.2)
+
+set_POA <- betweenLaneNormalization(set_POA, which="upper")
+plotRLE(set_POA, outline=FALSE, ylim=c(-4, 4), col=colors[x])
+plotPCA(set_POA, col=colors[x], cex=1.2)
+
+design_POA <- model.matrix(~x_POA, data=pData(set_POA))
+y_POA <- DGEList(counts=counts(set_POA), group=x_POA)
+y_POA <- calcNormFactors(y_POA, method="upperquartile")
+y_POA <- estimateGLMCommonDisp(y_POA, design_POA)
+y_POA <- estimateGLMTagwiseDisp(y_POA, design_POA)
+fit_POA <- glmFit(y_POA, design_POA)
+lrt_POA <- glmLRT(fit_POA, coef=2)
+top_POA <- topTags(lrt_POA, n=nrow(set_POA))$table
+empirical_POA <- rownames(set_POA)[which(!(rownames(set_POA) %in% rownames(top_POA)[1:5000]))]
+
+
+set1_POA <- RUVg(set_POA, empirical_POA, k=1)
+pData(set1_POA)
+
+plotRLE(set1_POA, outline=FALSE, ylim=c(-4, 4), col=colors[x_POA])
+plotPCA(set1_POA, col=colors[x_POA], cex=1.2)
+
+
+dds_POA <- DESeqDataSetFromMatrix(countData = counts(set1_POA),
+                              colData = pData(set1_POA),
+                              design = ~ W_1 + x_POA)
+
+dds_POA$x_POA <- relevel(dds_POA$x_POA, ref = "Vehicle")
+dds_POA <- DESeq(dds_POA)
+res_POA <- results(dds_POA, alpha =0.05)
+summary(res_POA)
+
+res_POA_RUVt = as.data.frame(res_POA)
+res_POA_RUVt <- rownames_to_column(res_POA_RUVt,var = "Geneid")
+
+
+Res_POA_RUV_all <- res_POA_RUVt %>% 
+  inner_join(ANN_file, by = c("Geneid" = "ensembl_gene_id")) %>%
+  inner_join(POA_kiss_cpm, by = "Geneid") %>%
+  dplyr::select(Geneid, external_gene_name, description, starts_with("cpm_"), log2FoldChange, pvalue, padj) %>%
+  mutate(MeanVehicle = rowMeans(.[4:6])) %>% 
+  mutate(MeanE2 = rowMeans(.[7:9])) %>%
+  dplyr::select(Geneid, external_gene_name, description,starts_with("cpm_O"), MeanVehicle, 
+                starts_with("cpm_E"), MeanE2, log2FoldChange, pvalue, padj) %>% 
+  mutate(round(.[, 4:12], digit = 2))
+
+
+info_POA <- read.table("POAinfo.txt", header = T, sep = "\t")
+info_POA$treatment = factor(info_POA$treatment, levels = c("E2", "Vehicle"))
+
+dds_POA_sima <- DESeqDataSetFromMatrix(countData = filtered_POA,
+                                  colData = info_POA,
+                                  design = ~treatment)
+dds_POA_sima <- DESeq(dds_POA_sima)
+res_POA_sima <- results(dds_POA_sima, alpha =0.05)
+summary(res_POA_sima)
+
+res_POA_sima_RUVt = as.data.frame(res_POA_sima)
+res_POA_sima_RUVt <- rownames_to_column(res_POA_sima_RUVt,var = "Geneid")
+
+Res_POA_sima_all <- res_POA_sima_RUVt %>% 
+  inner_join(ANN_file, by = c("Geneid" = "ensembl_gene_id")) %>%
+  inner_join(POA_kiss_cpm, by = "Geneid") %>%
+  dplyr::select(Geneid, external_gene_name, description, starts_with("cpm_"), log2FoldChange, pvalue, padj) %>%
+  mutate(MeanE2 = rowMeans(.[4:6])) %>% 
+  mutate(MeanVehicle = rowMeans(.[7:9])) %>%
+  dplyr::select(Geneid, external_gene_name, description, MeanVehicle, MeanE2, log2FoldChange, pvalue, padj) %>% 
+  mutate(round(.[, 4:6], digit = 2))
+
+##### ARC RUV_seq######
+
+ARC_kiss <- ARC_kiss_data %>% 
+  data.frame(row.names = 1)
+
+ARC_kiss_cpm = as.data.frame(cpm(ARC_kiss))
+colnames(ARC_kiss_cpm) = paste0('cpm_', colnames(ARC_kiss_cpm))
+ARC_kiss_cpm <- rownames_to_column(ARC_kiss_cpm,var = "Geneid")
+
+
+filter_ARC <- apply(ARC_kiss, 1, function(x) length(x[x>5])>=2)
+filtered_ARC <- ARC_kiss[filter_ARC,]
+x_ARC <- as.factor((rep(c("Vehicle","E2"), each=3)))
+set_ARC <- newSeqExpressionSet(as.matrix(filtered_ARC),
+                               phenoData = data.frame(x_ARC, row.names=colnames(filtered_ARC)))
+
+
+library(RColorBrewer)
+colors <- brewer.pal(3, "Set2")
+plotRLE(set_ARC, outline=FALSE, ylim=c(-4, 4), col=colors[x])
+plotPCA(set_ARC, col=colors[x], cex=1.2)
+
+set_ARC <- betweenLaneNormalization(set_ARC, which="upper")
+plotRLE(set_ARC, outline=FALSE, ylim=c(-4, 4), col=colors[x])
+plotPCA(set_ARC, col=colors[x], cex=1.2)
+
+design_ARC <- model.matrix(~x_ARC, data=pData(set_ARC))
+y_ARC <- DGEList(counts=counts(set_ARC), group=x_ARC)
+y_ARC <- calcNormFactors(y_ARC, method="upperquartile")
+y_ARC <- estimateGLMCommonDisp(y_ARC, design_ARC)
+y_ARC <- estimateGLMTagwiseDisp(y_ARC, design_ARC)
+fit_ARC <- glmFit(y_ARC, design_ARC)
+lrt_ARC <- glmLRT(fit_ARC, coef=2)
+top_ARC <- topTags(lrt_ARC, n=nrow(set_ARC))$table
+empirical_ARC <- rownames(set_ARC)[which(!(rownames(set_ARC) %in% rownames(top_ARC)[1:5000]))]
+
+
+set1_ARC <- RUVg(set_ARC, empirical_ARC, k=1)
+pData(set1_ARC)
+
+plotRLE(set1_ARC, outline=FALSE, ylim=c(-4, 4), col=colors[x_ARC])
+plotPCA(set1_ARC, col=colors[x_ARC], cex=1.2)
+
+
+dds_ARC <- DESeqDataSetFromMatrix(countData = counts(set1_ARC),
+                                  colData = pData(set1_ARC),
+                                  design = ~ W_1 + x_ARC)
+
+dds_ARC$x_ARC <- relevel(dds_ARC$x_ARC, ref = "Vehicle")
+dds_ARC <- DESeq(dds_ARC)
+res_ARC <- results(dds_ARC, alpha =0.05)
+summary(res_ARC)
+
+res_ARC_RUVt = as.data.frame(res_ARC)
+res_ARC_RUVt <- rownames_to_column(res_ARC_RUVt,var = "Geneid")
+
+
+Res_ARC_RUV_all <- res_ARC_RUVt %>% 
+  inner_join(ANN_file, by = c("Geneid" = "ensembl_gene_id")) %>%
+  inner_join(ARC_kiss_cpm, by = "Geneid") %>%
+  dplyr::select(Geneid, external_gene_name, description, starts_with("cpm_"), log2FoldChange, pvalue, padj) %>%
+  mutate(MeanVehicle = rowMeans(.[4:6])) %>% 
+  mutate(MeanE2 = rowMeans(.[7:9])) %>%
+  dplyr::select(Geneid, external_gene_name, description,starts_with("cpm_O"), MeanVehicle, 
+                starts_with("cpm_E"), MeanE2, log2FoldChange, pvalue, padj) %>% 
+  mutate(round(.[, 4:12], digit = 2))
+
+
+info_ARC <- read.table("ARCinfo.txt", header = T, sep = "\t")
+info_ARC$treatment = factor(info_ARC$treatment, levels = c("E2", "Vehicle"))
+
+dds_ARC_sima <- DESeqDataSetFromMatrix(countData = ARC_kiss,
+                                       colData = info_ARC,
+                                       design = ~treatment)
+dds_ARC_sima <- DESeq(dds_ARC_sima)
+res_ARC_sima <- results(dds_ARC_sima, alpha =0.05)
+summary(res_ARC_sima)
+
+res_ARC_sima_RUVt = as.data.frame(res_ARC_sima)
+res_ARC_sima_RUVt <- rownames_to_column(res_ARC_sima_RUVt,var = "Geneid")
+
+Res_ARC_sima_all <- res_ARC_sima_RUVt %>% 
+  inner_join(ANN_file, by = c("Geneid" = "ensembl_gene_id")) %>%
+  inner_join(ARC_kiss_cpm, by = "Geneid") %>%
+  dplyr::select(Geneid, external_gene_name, description, starts_with("cpm_"), log2FoldChange, pvalue, padj) %>%
+  mutate(MeanE2 = rowMeans(.[4:6])) %>% 
+  mutate(MeanVehicle = rowMeans(.[7:9])) %>%
+  dplyr::select(Geneid, external_gene_name, description, MeanVehicle, MeanE2, log2FoldChange, pvalue, padj) %>% 
+  mutate(round(.[, 4:6], digit = 2))
+#####Septum differential expression volcano plot####
+
+Envolcano_LS_kiss <- Res_Septum_RUV_all %>% 
+  na.omit() %>%
+  dplyr::select(Geneid, external_gene_name, log2FoldChange, padj) %>% 
+  filter(padj<0.05)
+
+asd <- Res_Septum_RUV_all %>%
+  dplyr::select(Geneid, external_gene_name, log2FoldChange, padj)
+
+asd_withlo10padj <- asd %>% 
+  mutate(log10padj = log10(padj))
+
+asd1 <- Neuropeptide_Septum_sig %>% 
+  select(Name)
+
+asd2 <- Receptor_Septum_sig %>% 
+  select(symbol)
+
+asd3 <- asd1 %>% 
+  full_join(asd2, by = c("Name" = "symbol")) %>% 
+  unique()
+
+selected_genes <- asd3$Name
+
+p12 <- EnhancedVolcano(Envolcano_LS_kiss,
+                       lab = Envolcano_LS_kiss$external_gene_name,
+                       x = 'log2FoldChange',
+                       y = 'padj',
+                       selectLab = selected_genes,
+                       labSize = 1,
+                       shape= c(16,16,16,16),
+                       axisLabSize = 1,
+                       labCol = 'black',
+                       labFace = 'bold',
+                       colAlpha = 0.7,
+                       title='', subtitle='',
+                       pCutoff = 0.049,
+                       FCcutoff = 1, col = c('grey30', 'grey30', 'royalblue', 'red2'),
+                       pointSize = 0.2,
+                       drawConnectors = TRUE,
+                       widthConnectors = 0.01,
+                       lengthConnectors = unit(0.01, "npc"),
+                       arrowheads = FALSE,
+                       cutoffLineWidth = 0.1,
+                       hlineWidth = 0.1,
+                       vlineWidth = 0.1,
+                       borderWidth = 0.1,
+                       boxedLabels = FALSE,
+                       max.overlaps = 150,
+                       legendLabels = c('NS', expression(Log[2]~FC), 'p-value', expression(p-adj.~and~log[2]~FC)),
+                       legendPosition = 'top',
+                       colConnectors = "black",
+                       directionConnectors = "both",
+                       legendLabSize = 0.5,
+                       legendIconSize = 0.5,
+                       caption = bquote(~Log[2]~"fold change cutoff: 1; adjusted p-value cutoff: 0.05"))
+
+p12+ggplot2::scale_x_continuous(
+  breaks=seq(-12,12, 0.1), limits = c(0,2))+
+  scale_y_continuous(
+    breaks=seq(0,30, 0.5), limits = c(0,10))+
+  
+  theme_bw()+
+  theme(axis.text = element_text(colour = "black"),
+        axis.text.x = element_text(colour = "black"),
+        axis.text.y = element_text(colour = "black"))+
+  theme(legend.position="top")+theme(text = element_text(size = 5)) + theme(axis.text = element_text(size = 6),
+                                                                            axis.text.x = element_text(colour = "black"),
+                                                                            axis.text.y = element_text(colour = "black"))+
+  theme(legend.key.size = unit(2, 'mm'))+
+  theme(legend.text = element_text(size=5))+
+  theme(legend.title = element_text(size=5)) + theme(axis.line = element_line(size = 0.2)) + theme(axis.ticks = element_line(size = 0.2))
+ggsave("volcano_plot.pdf", width = 82 , height = 78 , units = "mm")
+
+####Pathway analysis of LS kisspeptin neurons####
+
+PA_septum <- Res_Septum_RUV_all %>% 
+  dplyr::filter(padj<0.05) %>% 
+  dplyr::select(Geneid)
+
+PA_septum_lfc <- Res_Septum_RUV_all %>% 
+  dplyr::filter(padj<0.05) %>% 
+  dplyr::select(external_gene_name, log2FoldChange)
+
+
+PA_septum_lfc$external_gene_name[PA_septum_lfc$external_gene_name == 'mt-Nd4'] <- 'ND4'
+
+geneList = PA_septum_lfc[,2]
+
+names(geneList) = as.character(PA_septum_lfc[,1])
+
+geneList = sort(geneList, decreasing = TRUE)
+
+Entrez_septum <-  getBM(attributes = 'entrezgene_id',
+                                   filters = c("ensembl_gene_id"),
+                                   values=PA_septum$Geneid,
+                                   mart = ensembl109)
+
+Septum_KEGG = enrichKEGG(
+  gene=Entrez_septum$entrezgene_id,
+  organism = "mmu",
+  keyType = "kegg",
+  pvalueCutoff = 0.05,
+  pAdjustMethod = "BH",
+  universe=,
+  minGSSize = 10,
+  maxGSSize = 500,
+  qvalueCutoff = 0.05,
+  use_internal_data = FALSE
+)
+
+Septum_KEGG<- setReadable(Septum_KEGG, 'org.Mm.eg.db', 'ENTREZID')
+Septum_KEGG_PA_results <- Septum_KEGG@result
+Septum_KEGG_PA_results_flt <- Septum_KEGG_PA_results %>% 
+  dplyr::filter(p.adjust<0.05 | qvalue<0.05)
+
+Septum_GO_CC <- enrichGO(
+  Entrez_septum$entrezgene_id,
+  OrgDb = 'org.Mm.eg.db',
+  keyType = "ENTREZID",
+  ont = "CC",
+  pvalueCutoff = 0.05,
+  pAdjustMethod = "BH",
+  universe= ,
+  qvalueCutoff = 0.05,
+  minGSSize = 10,
+  maxGSSize = 500,
+  readable = TRUE,
+  pool = TRUE
+)
+Septum_GO_PA <- Septum_GO@result
+Septum_GO_PA_flt <- Septum_GO_PA %>% 
+  dplyr::filter(p.adjust<0.05 | qvalue<0.05) %>% 
+  dplyr::arrange(desc(Count))
+
+Septum_GO_PA_MF <- Septum_GO_PA_flt %>% 
+  dplyr::filter(grepl("MF",ONTOLOGY))
+Septum_GO_PA_BP <- Septum_GO_PA_flt %>% 
+  dplyr::filter(grepl("BP",ONTOLOGY))
+Septum_GO_PA_CC <- Septum_GO_PA_flt %>% 
+  dplyr::filter(grepl("CC",ONTOLOGY))
+
+upsetplot(Septum_GO_MF)
+upsetplot(Septum_KEGG)
+upsetplot(Septum_GO_BP)
+upsetplot(Septum_GO_CC)
+
+dotplot(Septum_KEGG,
+        showCategory = 5)
+
+
+RYD  = brewer.pal(n = 4, name = "RdBu")
+
+
+min.value <- floor( min(p1$data$color, na.rm = TRUE) )
+max.value <- ceiling( max(p1$data$color, na.rm = TRUE) )
+
+p1 <- cnetplot(Septum_KEGG,
+           shadowtext= "none",
+           cex.params = list(foldChange = 0.4, category_node = 0.7, gene_node = 0.7,
+                             category_label = 0.4, gene_label = 0.4),
+           color.params = list(foldChange = geneList, edge = FALSE, category = "#EED971FF", gene =
+                                 "#000000"))+
+  scale_colour_gradientn(name = "fold change",colours =  c("#000055","#000096", "#0000FF", "#0000FF", "#F21A00","#F21A00","#F21A00", "#ff0000"),
+                         values = rescale(c(min.value,-2.5,-1,0,2.5,5,7.5, max.value)))
+
+p1+ scale_colour_stepsn(name = "logfc_values", 
+                        colours = c("#4169E1", "#37cee3","#ebdd11","#ec980b","#ed4e06", "#ee0000"),
+                        limits = c(-4,8),
+                        breaks = c(-4,-2,0,2,4,6,8))
+
+ggsave("cnet_plot.pdf", width = 120 , height = 90 , units = "mm")
+
+
+PA_septum_lfc1 <- PA_septum_lfc %>% 
+  mutate(digits = ifelse(PA_septum_lfc$log2FoldChange>= 7, 7, 
+       ifelse(PA_septum_lfc$log2FoldChange>=5, 5,
+              ifelse(PA_septum_lfc$log2FoldChange>=2.5,2.5,
+                     ifelse(PA_septum_lfc$log2FoldChange>=0,0,
+                            ifelse(PA_septum_lfc$log2FoldChange>= -2.5,-2,
+                                   ifelse(PA_septum_lfc$log2FoldChange<-2.5,-2.5,0))))))) 
+
+PA_septum_lfc1$digits <- as.factor(PA_septum_lfc1$digits)
+  
+digits = PA_septum_lfc1[,3]
+  
+names(digits) = as.character(PA_septum_lfc1[,1])
+  
+digits = sort(digits, decreasing = TRUE)
+
+####categorise the significant express genes####
+
+Cat_Septum <- Res_Septum_RUV_all %>% 
+  dplyr::filter(padj<0.05) %>% 
+  
+Neuropeptide_Septum_sig <- neuropeptides %>% 
+  inner_join(Cat_Septum, by = c("Name"="external_gene_name"))
+
+TF_Septum_sig <- TF_list_KEGG_brite  %>% 
+  inner_join(Cat_Septum, by = c("Name"="external_gene_name"))%>% 
+  rename(MeanE2_Septum = MeanE2) %>% 
+  rename(MeanVehicle_Septum = MeanVehicle) %>% 
+  rename(log2FoldChange_Septum = log2FoldChange) %>% 
+  rename(padj_Septum = padj) %>% 
+  rename(pvalue_Septum = pvalue)
+
+Transporter_Septum_sig <- transporter  %>% 
+  inner_join(Cat_Septum, by = c("Name"="external_gene_name"))
+
+Receptor_Septum_sig <- All_receptors  %>% 
+  inner_join(Cat_Septum, by = c("symbol"="external_gene_name"))
+
+TM_Septum_sig <- Transcription_machinery_mmu  %>% 
+  inner_join(Cat_Septum, by = c("Name"="external_gene_name"))
+
+Ion_channel_Septum_sig <- ion_channel_mmu  %>% 
+  inner_join(Cat_Septum, by = c("Name"="external_gene_name"))
+
+####ARC_categtf####
+
+CAte_ARC <- Res_ARC_RUV_all %>% 
+  dplyr::filter(padj<0.05) 
+
+TF_ARC_sig <- TF_list_KEGG_brite  %>% 
+  inner_join(CAte_ARC, by = c("Name"="external_gene_name")) %>% 
+  rename(MeanE2_ARC = MeanE2) %>% 
+  rename(MeanVehicle_ARC = MeanVehicle) %>% 
+  rename(log2FoldChange_ARC = log2FoldChange) %>% 
+  rename(padj_ARC = padj) %>% 
+  rename(pvalue_ARC = pvalue) 
+####RP3V_categ####
+
+CAte_POA <- Res_POA_RUV_all %>% 
+  dplyr::filter(padj<0.05) 
+
+TF_POA_sig <- TF_list_KEGG_brite  %>% 
+  inner_join(CAte_POA, by = c("Name"="external_gene_name")) %>% 
+  rename(MeanE2_POA = MeanE2) %>% 
+  rename(MeanVehicle_POA = MeanVehicle) %>% 
+  rename(log2FoldChange_POA = log2FoldChange) %>% 
+  rename(padj_POA = padj) %>% 
+  rename(pvalue_POA = pvalue)
+
+
+
+####All_categories########
+
+Cat_POA <- Res_POA_RUV_all %>% 
+  dplyr::select(Geneid, MeanVehicle, MeanE2, log2FoldChange, padj) %>% 
+  rename(MeanE2_POA = MeanE2) %>% 
+  rename(MeanVehicle_POA = MeanVehicle) %>% 
+  rename(log2FoldChange_POA = log2FoldChange) %>% 
+  rename(padj_POA = padj)
+
+Cat_ARC <- Res_ARC_RUV_all %>% 
+  dplyr::select(Geneid, MeanVehicle, MeanE2, log2FoldChange, padj) %>% 
+  rename(MeanE2_ARC = MeanE2) %>% 
+  rename(MeanVehicle_ARC = MeanVehicle) %>% 
+  rename(log2FoldChange_ARC = log2FoldChange) %>% 
+  rename(padj_ARC = padj)
+
+Neuropeptide_Three_kiss <- Neuropeptide_Septum_sig %>% 
+  left_join(Cat_ARC, by = "Geneid") %>% 
+  left_join(Cat_POA, by = "Geneid")
+
+TF_Three_kiss <- TF_Septum_sig  %>% 
+  left_join(Cat_ARC, by = "Geneid") %>% 
+  left_join(Cat_POA, by = "Geneid")
+
+Transporter_Three_kiss <- Transporter_Septum_sig  %>% 
+  left_join(Cat_ARC, by = "Geneid") %>% 
+  left_join(Cat_POA, by = "Geneid")
+
+Receptor_Three_kiss <- Receptor_Septum_sig  %>% 
+  left_join(Cat_ARC, by = "Geneid") %>% 
+  left_join(Cat_POA, by = "Geneid")
+
+TM_Three_kiss <- TM_Septum_sig  %>% 
+  left_join(Cat_ARC, by = "Geneid") %>% 
+  left_join(Cat_POA, by = "Geneid")
+
+Ion_channel_Three_kiss <- Ion_channel_Septum_sig  %>% 
+  left_join(Cat_ARC, by = "Geneid") %>% 
+  left_join(Cat_POA, by = "Geneid")
+
+
+#####Collect the significantly expressed genes from the three regions, focusing on Septum##########
+
+Septum_kiss_sign <- Res_Septum_RUV_all %>% 
+  dplyr::select(Geneid,external_gene_name, log2FoldChange, padj) %>% 
+  dplyr::filter(padj<0.05) %>% 
+  dplyr::mutate(Up_down_LS = case_when(log2FoldChange > 0 ~ "Upregulation",
+                                    log2FoldChange < 0 ~ "Downregulation"))%>% 
+  rename("log2FoldChange_LS" = log2FoldChange) %>% 
+  rename("padj_LS" = padj)
+
+ARC_kiss_sign <- Res_ARC_RUV_all %>% 
+  dplyr::select(Geneid,external_gene_name, log2FoldChange, padj) %>% 
+  dplyr::filter(padj<0.05) %>% 
+  dplyr::mutate(Up_down_ARC = case_when(log2FoldChange > 0 ~ "Upregulation",
+                                    log2FoldChange < 0 ~ "Downregulation"))%>% 
+  rename("log2FoldChange_ARC" = log2FoldChange) %>% 
+  rename("padj_ARC" = padj)
+
+POA_kiss_sign <- Res_POA_RUV_all %>% 
+  dplyr::select(Geneid,external_gene_name, log2FoldChange, padj) %>% 
+  dplyr::filter(padj<0.05) %>%
+  dplyr::mutate(Up_down_POA = case_when(log2FoldChange > 0 ~ "Upregulation",
+                                    log2FoldChange < 0 ~ "Downregulation")) %>% 
+  rename("log2FoldChange_POA" = log2FoldChange) %>% 
+  rename("padj_POA" = padj)
+
+Three_kiss_union <- Septum_kiss_sign %>% 
+  inner_join(ARC_kiss_sign, by = "Geneid") %>% 
+  inner_join(POA_kiss_sign, by = "Geneid") %>% 
+  dplyr::select(Geneid, external_gene_name, everything()) %>% 
+  dplyr::select(!c(external_gene_name.x,external_gene_name.y))
+
+LS_ARC_kiss_union <- Septum_kiss_sign %>% 
+  inner_join(ARC_kiss_sign, by = "Geneid") %>%
+  dplyr::select(Geneid, external_gene_name.x, everything()) %>% 
+  dplyr::select(!c(external_gene_name.y))
+
+LS_POA_kiss_union <- Septum_kiss_sign %>% 
+  inner_join(POA_kiss_sign, by = "Geneid") %>%
+  dplyr::select(Geneid, external_gene_name.x, everything()) %>% 
+  dplyr::select(!c(external_gene_name.y))
+
+ARC_POA_kiss_union <- ARC_kiss_sign %>% 
+  inner_join(POA_kiss_sign, by = "Geneid") %>%
+  dplyr::select(Geneid, external_gene_name.x, everything()) %>% 
+  dplyr::select(!c(external_gene_name.y)) %>% 
+  anti_join(Three_kiss_union, by = "Geneid")
+
+###JUST_LS####
+
+Just_LS_kiss <- Septum_kiss_sign %>% 
+  anti_join(ARC_kiss_sign, by = "Geneid") %>% 
+  anti_join(POA_kiss_sign, by = "Geneid") %>% 
+  dplyr::select(Geneid, external_gene_name, everything())
+
+####JUST_ARC#####
+
+Just_ARC_kiss <- ARC_kiss_sign %>% 
+  anti_join(Septum_kiss_sign, by = "Geneid") %>% 
+  anti_join(POA_kiss_sign, by = "Geneid") %>% 
+  dplyr::select(Geneid, external_gene_name, everything())
+
+####JUST_POA#####
+
+Just_POA_kiss <- POA_kiss_sign %>% 
+  anti_join(ARC_kiss_sign, by = "Geneid") %>% 
+  anti_join(Septum_kiss_sign, by = "Geneid") %>% 
+  dplyr::select(Geneid, external_gene_name, everything())
+
+
+ARC_POA_kiss_LS_union <- ARC_POA_kiss_union %>% 
+  anti_join(Three_kiss_union, by = "Geneid")
+
+LS_ARC_kiss_union <- LS_ARC_kiss_union %>% 
+  anti_join(Three_kiss_union, by = "Geneid")
+
+LS_POA_kiss_union <- LS_POA_kiss_union %>% 
+  anti_join(Three_kiss_union, by = "Geneid")
+
+#####gene expression tables####
+
+####Septum_categorization#####
+
+Septum_kiss_cpm_cat <- Septum_kiss_cpm %>% 
+  inner_join(ANN_file, by = c("Geneid" = "ensembl_gene_id")) %>%
+  dplyr::select(Geneid, external_gene_name, description, cpm_S3_Veh, cpm_S11_Veh, cpm_S12_Veh,
+                cpm_S2_E2, cpm_S8_E2, cpm_S13_E2, cpm_S14_E2)%>%
+  mutate(Mean_Vehicle_LS = rowMeans(.[4:6])) %>%
+  mutate(Mean_E2_LS = rowMeans(.[7:10])) %>%
+  mutate(Mean_all_LS = rowMeans(.[4:10])) %>%
+  mutate(round(.[, 4:13], digit = 2)) # %>% 
+  # dplyr::select(Geneid, external_gene_name, description, Mean_Vehicle_LS, Mean_E2_LS, Mean_all_LS)
+
+Neuropeptide_Septum <- neuropeptides %>% 
+  inner_join(Septum_kiss_cpm_cat, by = c("Name"="external_gene_name")) %>%
+  dplyr::arrange(desc(Mean_all_LS)) %>% 
+  dplyr::top_n(.,20,Mean_all_LS)
+
+TF_Septum <- TF_list_KEGG_brite  %>% 
+  inner_join(Septum_kiss_cpm_cat, by = c("Name"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_LS)) %>% 
+  dplyr::top_n(.,20,Mean_all_LS)
+
+TF_Septum_Miklos <- TF_list_KEGG_brite  %>% 
+  inner_join(Septum_kiss_cpm_cat, by = c("Name"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_LS)) %>% 
+  dplyr::filter(Mean_all_LS>=5)
+
+Transporter_Septum <- transporter  %>% 
+  inner_join(Septum_kiss_cpm_cat, by = c("Name"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_LS)) %>% 
+  dplyr::top_n(.,20,Mean_all_LS)
+
+Receptor_Septum <- All_receptors  %>% 
+  inner_join(Septum_kiss_cpm_cat, by = c("symbol"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_LS)) %>% 
+  dplyr::top_n(.,20,Mean_all_LS)
+
+TM_Septum <- Transcription_machinery_mmu  %>% 
+  inner_join(Septum_kiss_cpm_cat, by = c("Name"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_LS)) %>% 
+  dplyr::top_n(.,20,Mean_all_LS)
+
+Ion_channel_Septum <- ion_channel_mmu  %>% 
+  inner_join(Septum_kiss_cpm_cat, by = c("Name"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_LS)) %>% 
+  dplyr::top_n(.,20,Mean_all_LS)
+  
+####ARC_categerisation#####
+
+ARC_kiss_cpm_cat <- ARC_kiss_cpm %>% 
+  inner_join(ANN_file, by = c("Geneid" = "ensembl_gene_id")) %>%
+  dplyr::select(Geneid, external_gene_name, description, cpm_Oil_3_ARC, cpm_Oil_4_ARC, cpm_Oil_7_ARC,
+                cpm_E2_2_ARC, cpm_E2_5_ARC, cpm_E2_6_ARC)%>%
+  mutate(Mean_Vehicle_ARC = rowMeans(.[4:6])) %>%
+  mutate(Mean_E2_ARC = rowMeans(.[7:9])) %>%
+  mutate(Mean_all_ARC = rowMeans(.[4:9])) %>%
+  mutate(round(.[, 4:12], digit = 2)) # %>% 
+  # dplyr::select(Geneid, external_gene_name, description, Mean_Vehicle_ARC, Mean_E2_ARC, Mean_all_ARC)
+
+Neuropeptide_ARC <- neuropeptides %>% 
+  inner_join(ARC_kiss_cpm_cat, by = c("Name"="external_gene_name")) %>%
+  dplyr::arrange(desc(Mean_all_ARC)) %>% 
+  dplyr::top_n(.,20,Mean_all_ARC)
+
+TF_ARC <- TF_list_KEGG_brite  %>% 
+  inner_join(ARC_kiss_cpm_cat, by = c("Name"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_ARC)) %>% 
+  dplyr::top_n(.,20,Mean_all_ARC)
+
+TF_ARC_Miklos <- TF_list_KEGG_brite  %>% 
+  inner_join(ARC_kiss_cpm_cat, by = c("Name"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_ARC)) %>% 
+  dplyr::filter(Mean_all_ARC>=5)
+
+Transporter_ARC <- transporter  %>% 
+  inner_join(ARC_kiss_cpm_cat, by = c("Name"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_ARC)) %>% 
+  dplyr::top_n(.,20,Mean_all_ARC)
+
+Receptor_ARC <- All_receptors  %>% 
+  inner_join(ARC_kiss_cpm_cat, by = c("symbol"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_ARC)) %>% 
+  dplyr::top_n(.,20,Mean_all_ARC)
+
+TM_ARC <- Transcription_machinery_mmu  %>% 
+  inner_join(ARC_kiss_cpm_cat, by = c("Name"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_ARC)) %>% 
+  dplyr::top_n(.,20,Mean_all_ARC)
+
+Ion_channel_ARC <- ion_channel_mmu  %>% 
+  inner_join(ARC_kiss_cpm_cat, by = c("Name"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_ARC)) %>% 
+  dplyr::top_n(.,20,Mean_all_ARC)
+
+####POA_categerisation#####
+
+POA_kiss_cpm_cat <- POA_kiss_cpm %>% 
+  inner_join(ANN_file, by = c("Geneid" = "ensembl_gene_id")) %>%
+  dplyr::select(Geneid, external_gene_name, description, cpm_Oil_8_POA, cpm_Oil_7_POA, cpm_Oil_4_POA,
+                cpm_E2_6_POA, cpm_E2_5_POA, cpm_E2_2_POA)%>%
+  mutate(Mean_Vehicle_POA = rowMeans(.[4:6])) %>%
+  mutate(Mean_E2_POA = rowMeans(.[7:9])) %>%
+  mutate(Mean_all_POA = rowMeans(.[4:9])) %>%
+  mutate(round(.[, 4:12], digit = 2)) # %>% 
+  # dplyr::select(Geneid, external_gene_name, description, Mean_Vehicle_POA, Mean_E2_POA, Mean_all_POA)
+
+Neuropeptide_POA <- neuropeptides %>% 
+  inner_join(POA_kiss_cpm_cat, by = c("Name"="external_gene_name")) %>%
+  dplyr::arrange(desc(Mean_all_POA)) %>% 
+  dplyr::top_n(.,20,Mean_all_POA)
+
+TF_POA <- TF_list_KEGG_brite  %>% 
+  inner_join(POA_kiss_cpm_cat, by = c("Name"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_POA)) %>% 
+  dplyr::top_n(.,20,Mean_all_POA)
+
+TF_POA_Miklos <- TF_list_KEGG_brite  %>% 
+  inner_join(POA_kiss_cpm_cat, by = c("Name"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_POA)) %>% 
+  dplyr::filter(Mean_all_POA>=5)
+
+Transporter_POA <- transporter  %>% 
+  inner_join(POA_kiss_cpm_cat, by = c("Name"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_POA)) %>% 
+  dplyr::top_n(.,20,Mean_all_POA)
+
+Receptor_POA <- All_receptors  %>% 
+  inner_join(POA_kiss_cpm_cat, by = c("symbol"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_POA)) %>% 
+  dplyr::top_n(.,20,Mean_all_POA)
+
+TM_POA <- Transcription_machinery_mmu  %>% 
+  inner_join(POA_kiss_cpm_cat, by = c("Name"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_POA)) %>% 
+  dplyr::top_n(.,20,Mean_all_POA)
+
+Ion_channel_POA <- ion_channel_mmu  %>% 
+  inner_join(POA_kiss_cpm_cat, by = c("Name"="external_gene_name"))%>%
+  dplyr::arrange(desc(Mean_all_POA)) %>% 
+  dplyr::top_n(.,20,Mean_all_POA)
+
+####Merge together the categorized tables####
+
+Three_region_neuropeptides <- Neuropeptide_Septum %>% 
+  full_join(Neuropeptide_ARC, by = "Name") %>%
+  full_join(Neuropeptide_POA, by = "Name") %>% 
+  dplyr::select(Name) %>%
+  inner_join(Septum_kiss_cpm_cat, by = c("Name" = "external_gene_name")) %>%
+  inner_join(ARC_kiss_cpm_cat, by = c("Name" = "external_gene_name")) %>% 
+  inner_join(POA_kiss_cpm_cat, by = c("Name" = "external_gene_name")) %>% 
+  dplyr::select(Name, Mean_Vehicle_LS, Mean_E2_LS,
+                Mean_Vehicle_ARC, Mean_E2_ARC,
+                Mean_Vehicle_POA, Mean_E2_POA)
+
+Three_region_Receptor <- Receptor_Septum %>% 
+  full_join(Receptor_ARC, by = "symbol") %>%
+  full_join(Receptor_POA, by = "symbol") %>% 
+  dplyr::select(symbol) %>%
+  inner_join(Septum_kiss_cpm_cat, by = c("symbol" = "external_gene_name")) %>%
+  inner_join(ARC_kiss_cpm_cat, by = c("symbol" = "external_gene_name")) %>% 
+  inner_join(POA_kiss_cpm_cat, by = c("symbol" = "external_gene_name")) %>% 
+  dplyr::select(symbol, Mean_Vehicle_LS, Mean_E2_LS,
+                Mean_Vehicle_ARC, Mean_E2_ARC,
+                Mean_Vehicle_POA, Mean_E2_POA)
+
+Three_region_ion_channel <- Ion_channel_Septum %>% 
+  full_join(Ion_channel_ARC, by = "Name") %>%
+  full_join(Ion_channel_POA, by = "Name") %>% 
+  dplyr::select(Name) %>%
+  inner_join(Septum_kiss_cpm_cat, by = c("Name" = "external_gene_name")) %>%
+  inner_join(ARC_kiss_cpm_cat, by = c("Name" = "external_gene_name")) %>% 
+  inner_join(POA_kiss_cpm_cat, by = c("Name" = "external_gene_name")) %>% 
+  dplyr::select(Name, Mean_Vehicle_LS, Mean_E2_LS,
+                Mean_Vehicle_ARC, Mean_E2_ARC,
+                Mean_Vehicle_POA, Mean_E2_POA)
+
+Three_region_Transporter <- Transporter_Septum %>% 
+  full_join(Transporter_ARC, by = "Name") %>%
+  full_join(Transporter_POA, by = "Name") %>% 
+  dplyr::select("Name") %>%
+  inner_join(Septum_kiss_cpm_cat, by = c("Name" = "external_gene_name")) %>%
+  inner_join(ARC_kiss_cpm_cat, by = c("Name" = "external_gene_name")) %>% 
+  inner_join(POA_kiss_cpm_cat, by = c("Name" = "external_gene_name")) %>% 
+  dplyr::select("Name", Mean_Vehicle_LS, Mean_E2_LS,
+                Mean_Vehicle_ARC, Mean_E2_ARC,
+                Mean_Vehicle_POA, Mean_E2_POA)
+
+Three_region_TF <- TF_Septum %>% 
+  full_join(TF_ARC, by = "Name") %>%
+  full_join(TF_POA, by = "Name") %>% 
+  dplyr::select("Name") %>%
+  inner_join(Septum_kiss_cpm_cat, by = c("Name" = "external_gene_name")) %>%
+  inner_join(ARC_kiss_cpm_cat, by = c("Name" = "external_gene_name")) %>% 
+  inner_join(POA_kiss_cpm_cat, by = c("Name" = "external_gene_name")) %>% 
+  dplyr::select("Name", Mean_Vehicle_LS, Mean_E2_LS,
+                Mean_Vehicle_ARC, Mean_E2_ARC,
+                Mean_Vehicle_POA, Mean_E2_POA)
+
+
+
+####Chatgpt test#####
+
+Kisspeptin_expression <- Three_region_neuropeptides %>%
+  data.frame(row.names = 1) %>% 
+  filter(Geneid == "ENSMUSG00000116158") %>% 
+  dplyr::select(starts_with("cpm_")) %>% 
+  mutate(.[,1:3]+1)
+
+Kiss1_spider <- New_Microsoft_Excel_munkalap_4_ %>% 
+  data.frame(row.names = 1)
+
+Kisspeptin_expression_log <- log2(Kisspeptin_expression)
+
+Kisspeptin_expression_ID <- t(Kisspeptin_expression_log)
+
+Kisspeptin_expression_spider <- Kisspeptin_expression_log %>% 
+  mutate(Means_LS_Veh = rowMeans(.[1:3])) %>%
+  mutate(Means_LS_E2 = rowMeans(.[4:7])) %>%
+  mutate(Means_ARC_Veh = rowMeans(.[8:10])) %>%
+  mutate(Means_ARC_E2 = rowMeans(.[11:13])) %>%
+  mutate(Means_POA_Veh = rowMeans(.[14:16])) %>%
+  mutate(Means_POA_E2 = rowMeans(.[17:19])) %>%
+  t() %>% 
+  bind_cols(., c(.[1:3,], .[4:7,], .[8:10,],.[11:13,],.[14:16,],.[17:19,]))
+  
+Kiss1_spider <- data.frame(Name = c("Max", "Min", "Kiss1_mean"), 
+                 LS_veh = c(10,0,Kisspeptin_expression_spider[20]),
+                 LS_E2 = c(10,0,Kisspeptin_expression_spider[21]),
+                 ARC_veh = c(10,0,Kisspeptin_expression_spider[22]),
+                 ARC_E2 = c(10,0,Kisspeptin_expression_spider[23]),
+                 RP3V_veh = c(10,0,Kisspeptin_expression_spider[24]),
+                 RP3V_E2 = c(10,0,Kisspeptin_expression_spider[25]))
+
+  
+  
+  
+  rbind(rep(10,6) , rep(0,6))
+  select(Means_LS_E2, Means_LS_Veh, Means_ARC_E2, Means_ARC_Veh, Means_POA_E2, Means_POA_Veh)
+
+Kisspeptin_expression_spider <- rbind(rep(10,6) , rep(0,6) , Kisspeptin_expression_spider)
+
+
+axis_labels <- colnames(Kisspeptin_expression_spider)
+
+radarchart(Kisspeptin_expression_spider)
+
+
+data <- as.data.frame(matrix( sample( 2:20 , 10 , replace=T) , ncol=10))
+colnames(data) <- c("math" , "english" , "biology" , "music" , "R-coding", "data-viz" , "french" , "physic", "statistic", "sport" )
+data <- rbind(rep(20,10) , rep(0,10) , data)
+par(cex.lab = 5)
+radarchart( Kiss1_spider[,2:7]  , axistype=1 , seg = 5,na.itp = TRUE, 
+            pfcol = c(alpha("red", 0.5)), 
+            # #custom polygon
+            # pcol=rgb(0.2,0.5,0.5,0.9) , pfcol=rgb(0.2,0.5,0.5,0.5) , plwd=4 , 
+            
+            #custom the grid
+            cglcol="grey", cglty=1, axislabcol="grey", caxislabels=seq(0,10,2), cglwd=0.8,
+            
+            #custom labels
+            vlcex=0.8, plty = c(1,0,0))
+
+
+####Make the Supplementary tables#######
+
+##TableS1###
+#########KPLS vs. KPARC (OVX+Veh)#####
+KPLSvsKPARC_OVX_Veh <- Res_LS_vs_ARC_kiss_Oil_all %>% 
+  dplyr::select(Geneid, external_gene_name, description, MeanLS, MeanARC, log2FoldChange, pvalue, padj) %>% 
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = external_gene_name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("KPLS (Mean CPM)" = MeanLS) %>%
+  dplyr::rename("KPARC (Mean CPM)" = MeanARC) %>%
+  dplyr::rename("Log2FC" = log2FoldChange) %>%
+  dplyr::filter(padj<0.05) %>%
+  dplyr::mutate(round(.[, 4:6], digit = 2)) %>%
+  dplyr::mutate(signif(.[,7:8 ], digit= 2)) %>%
+  dplyr::arrange(desc(Log2FC))
+
+#########KPLS vs. KPARC (OVX+E2)#####
+  
+KPLSvsKPARC_OVX_E2 <- Res_LS_vs_ARC_kiss_E2_all %>% 
+  dplyr::select(Geneid, external_gene_name, description, MeanLS, MeanARC, log2FoldChange, pvalue, padj) %>% 
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = external_gene_name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("KPLS (Mean CPM)" = MeanLS) %>%
+  dplyr::rename("KPARC (Mean CPM)" = MeanARC) %>%
+  dplyr::rename("Log2FC" = log2FoldChange) %>%
+  dplyr::filter(padj<0.05) %>%
+  dplyr::mutate(round(.[, 4:6], digit = 2)) %>%
+  dplyr::mutate(signif(.[,7:8 ], digit= 2)) %>%
+  dplyr::arrange(desc(Log2FC))
+
+########KPLS vs. KPRP3V (OVX+Veh)#####
+
+KPLSvsKPRP3V_OVX_Veh <- Res_LS_vs_POA_kiss_Oil_all %>% 
+  dplyr::select(Geneid, external_gene_name, description, MeanLS, MeanPOA, log2FoldChange, pvalue, padj) %>% 
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = external_gene_name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("KPLS (Mean CPM)" = MeanLS) %>%
+  dplyr::rename("KPRP3V (Mean CPM)" = MeanPOA) %>%
+  dplyr::rename("Log2FC" = log2FoldChange) %>%
+  dplyr::filter(padj<0.05) %>%
+  dplyr::mutate(round(.[, 4:6], digit = 2)) %>%
+  dplyr::mutate(signif(.[,7:8 ], digit= 2)) %>%
+  dplyr::arrange(desc(Log2FC))
+
+########KPLS vs. KPRP3V (OVX+E2)#####
+
+KPLSvsKPRP3V_OVX_E2 <- Res_LS_vs_POA_kiss_E2_all %>% 
+  dplyr::select(Geneid, external_gene_name, description, MeanLS, MeanPOA, log2FoldChange, pvalue, padj) %>% 
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = external_gene_name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("KPLS (Mean CPM)" = MeanLS) %>%
+  dplyr::rename("KPRP3V (Mean CPM)" = MeanPOA) %>%
+  dplyr::rename("Log2FC" = log2FoldChange) %>%
+  dplyr::filter(padj<0.05) %>%
+  dplyr::mutate(round(.[, 4:6], digit = 2)) %>%
+  dplyr::mutate(signif(.[,7:8 ], digit= 2)) %>%
+  dplyr::arrange(desc(Log2FC))
+
+
+
+#TableS2#####
+
+######All changes (KPLS)#####
+All_changes_KPLS <- Res_Septum_RUV_all %>%
+  dplyr::select(Geneid, external_gene_name, description, MeanVehicle, MeanE2, log2FoldChange, pvalue, padj) %>% 
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = external_gene_name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean_Vehicle" = MeanVehicle) %>%
+  dplyr::rename("Mean_E2" = MeanE2) %>%
+  dplyr::rename("Log2FC" = log2FoldChange) %>%
+  dplyr::filter(padj<0.05) %>%
+  dplyr::mutate(round(.[, 4:6], digit = 2)) %>%
+  dplyr::mutate(signif(.[,7:8 ], digit= 2)) %>%
+  dplyr::arrange(desc(Log2FC))
+
+######Changing ion channels (KPLS)#####
+Changing_ion_channels_KPLS <- Ion_channel_Septum_sig %>% 
+  dplyr::select(Geneid, Name, description, MeanVehicle, MeanE2, log2FoldChange, pvalue, padj) %>% 
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = Name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean_Vehicle" = MeanVehicle) %>%
+  dplyr::rename("Mean_E2" = MeanE2) %>%
+  dplyr::rename("Log2FC" = log2FoldChange) %>%
+  dplyr::filter(padj<0.05) %>%
+  dplyr::mutate(round(.[, 4:6], digit = 2)) %>%
+  dplyr::mutate(signif(.[,7:8 ], digit= 2)) %>%
+  dplyr::arrange(desc(Log2FC))
+
+######Changing transporters (KPLS)#####
+Changing_transporters_KPLS <- Transporter_Septum_sig %>% 
+  dplyr::select(Geneid, Name, description, MeanVehicle, MeanE2, log2FoldChange, pvalue, padj) %>% 
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = Name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean_Vehicle" = MeanVehicle) %>%
+  dplyr::rename("Mean_E2" = MeanE2) %>%
+  dplyr::rename("Log2FC" = log2FoldChange) %>%
+  dplyr::filter(padj<0.05) %>%
+  dplyr::mutate(round(.[, 4:6], digit = 2)) %>%
+  dplyr::mutate(signif(.[,7:8 ], digit= 2)) %>%
+  dplyr::arrange(desc(Log2FC))
+
+######Changing transcription factors (KPLS)#####
+Changing_transcription_factors_KPLS <- TF_Septum_sig %>% 
+  dplyr::select(Geneid, `Gene symbol`, description, MeanVehicle, MeanE2, log2FoldChange, pvalue, padj) %>% 
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = `Gene symbol`) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean_Vehicle" = MeanVehicle) %>%
+  dplyr::rename("Mean_E2" = MeanE2) %>%
+  dplyr::rename("Log2FC" = log2FoldChange) %>%
+  dplyr::filter(padj<0.05) %>%
+  dplyr::mutate(round(.[, 4:6], digit = 2)) %>%
+  dplyr::mutate(signif(.[,7:8 ], digit= 2)) %>%
+  dplyr::arrange(desc(Log2FC))
+
+######Changing neuropeptides/granins (KPLS)#####
+Changing_neuropeptides_granins_KPLS <- Neuropeptide_Septum_sig %>% 
+  dplyr::select(Geneid, Name, description, MeanVehicle, MeanE2, log2FoldChange, pvalue, padj) %>% 
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = Name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean_Vehicle" = MeanVehicle) %>%
+  dplyr::rename("Mean_E2" = MeanE2) %>%
+  dplyr::rename("Log2FC" = log2FoldChange) %>%
+  dplyr::filter(padj<0.05) %>%
+  dplyr::mutate(round(.[, 4:6], digit = 2)) %>%
+  dplyr::mutate(signif(.[,7:8 ], digit= 2)) %>%
+  dplyr::arrange(desc(Log2FC))
+
+######Changing receptors (KPLS)#####
+Changing_receptors_KPLS <- Receptor_Septum_sig %>% 
+  dplyr::select(Geneid, symbol, description, MeanVehicle, MeanE2, log2FoldChange, pvalue, padj) %>% 
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = symbol) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean_Vehicle" = MeanVehicle) %>%
+  dplyr::rename("Mean_E2" = MeanE2) %>%
+  dplyr::rename("Log2FC" = log2FoldChange) %>%
+  dplyr::filter(padj<0.05) %>%
+  dplyr::mutate(round(.[, 4:6], digit = 2)) %>%
+  dplyr::mutate(signif(.[,7:8 ], digit= 2)) %>%
+  dplyr::arrange(desc(Log2FC))
+
+######All changes (KPARC)#####
+All_changes_KPARC <- Res_ARC_RUV_all %>% 
+  dplyr::select(Geneid, external_gene_name, description, MeanVehicle, MeanE2, log2FoldChange, pvalue, padj) %>% 
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = external_gene_name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean_Vehicle" = MeanVehicle) %>%
+  dplyr::rename("Mean_E2" = MeanE2) %>%
+  dplyr::rename("Log2FC" = log2FoldChange) %>%
+  dplyr::filter(padj<0.05) %>%
+  dplyr::mutate(round(.[, 4:6], digit = 2)) %>%
+  dplyr::mutate(signif(.[,7:8 ], digit= 2)) %>%
+  dplyr::arrange(desc(Log2FC))
+
+######All changes (KPRP3V)#####
+All_changes_KPRP3V <- Res_POA_RUV_all %>% 
+  dplyr::select(Geneid, external_gene_name, description, MeanVehicle, MeanE2, log2FoldChange, pvalue, padj) %>% 
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = external_gene_name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean_Vehicle" = MeanVehicle) %>%
+  dplyr::rename("Mean_E2" = MeanE2) %>%
+  dplyr::rename("Log2FC" = log2FoldChange) %>%
+  dplyr::filter(padj<0.05) %>%
+  dplyr::mutate(round(.[, 4:6], digit = 2)) %>%
+  dplyr::mutate(signif(.[,7:8 ], digit= 2)) %>%
+  dplyr::arrange(desc(Log2FC))
+
+######KPLS/KPARC shared changes #####
+Septum_kiss_sign_supp <- Res_Septum_RUV_all %>% 
+  dplyr::select(Geneid,external_gene_name, description, MeanVehicle,MeanE2, log2FoldChange, pvalue, padj) %>% 
+  dplyr::filter(padj<0.05) %>% 
+  rename("log2FC LS" = log2FoldChange) %>% 
+  rename("padj LS" = padj) %>%  
+  rename("pvalue LS" = pvalue) %>%
+  dplyr::rename("Ensembl ID " = Geneid) %>% 
+  dplyr::rename("Gene symbol " = external_gene_name) %>%
+  dplyr::rename("Gene description " = description) %>%
+  dplyr::rename("Mean Vehicle LS" = MeanVehicle) %>%
+  dplyr::rename("Mean E2 LS" = MeanE2)
+  
+
+ARC_kiss_sign_supp <- Res_ARC_RUV_all %>% 
+  dplyr::select(Geneid,external_gene_name, description, MeanVehicle,MeanE2, log2FoldChange, pvalue, padj) %>% 
+  dplyr::filter(padj<0.05) %>% 
+  rename("log2FC ARC" = log2FoldChange) %>% 
+  rename("padj ARC" = padj) %>% 
+  rename("pvalue ARC" = pvalue) %>%
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = external_gene_name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean Vehicle ARC" = MeanVehicle) %>%
+  dplyr::rename("Mean E2 ARC" = MeanE2)
+
+POA_kiss_sign_supp <- Res_POA_RUV_all %>% 
+  dplyr::select(Geneid,external_gene_name, description, MeanVehicle,MeanE2, log2FoldChange, pvalue, padj) %>% 
+  dplyr::filter(padj<0.05) %>% 
+  rename("log2FC RP3V" = log2FoldChange) %>% 
+  rename("padj RP3V" = padj) %>%
+  rename("pvalue RP3V" = pvalue) %>%
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = external_gene_name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean Vehicle RP3V" = MeanVehicle) %>%
+  dplyr::rename("Mean E2 RP3V" = MeanE2)
+
+LS_ARC_kiss_union_supp <- Septum_kiss_sign_supp %>% 
+  inner_join(ARC_kiss_sign_supp, by = c("Ensembl ID " = "Ensembl ID")) %>%
+  anti_join(Three_kiss_union, by = c("Ensembl ID " = "Geneid")) %>% 
+  dplyr::select("Ensembl ID ", "Gene symbol", "Gene description", everything()) %>% 
+  dplyr::select(!c("Gene symbol ", "Gene description ")) %>% 
+  dplyr::mutate(round(.[, 4:13], digit = 2)) %>%
+  dplyr::mutate(signif(.[,7:8], digit= 2)) %>%
+  dplyr::mutate(signif(.[,12:13], digit= 2)) %>%
+  dplyr::arrange(desc(`log2FC LS`))
+
+######KPLS/KPRP3V shared changes####
+
+LS_RP3V_kiss_union_supp <- Septum_kiss_sign_supp %>% 
+  inner_join(POA_kiss_sign_supp, by = c("Ensembl ID " = "Ensembl ID")) %>%
+  anti_join(Three_kiss_union, by = c("Ensembl ID " = "Geneid")) %>% 
+  dplyr::select("Ensembl ID ", "Gene symbol", "Gene description", everything()) %>% 
+  dplyr::select(!c("Gene symbol ", "Gene description ")) %>% 
+  dplyr::mutate(round(.[, 4:13], digit = 2)) %>%
+  dplyr::mutate(signif(.[,7:8], digit= 2)) %>%
+  dplyr::mutate(signif(.[,12:13], digit= 2)) %>%
+  dplyr::arrange(desc(`log2FC LS`))
+
+######KPLS/KPARC/KPRP3V shared changes####
+
+Three_kiss_union_supp <- Septum_kiss_sign_supp %>% 
+  inner_join(POA_kiss_sign_supp, by = c("Ensembl ID " = "Ensembl ID")) %>%
+  inner_join(ARC_kiss_sign_supp, by = c("Ensembl ID " = "Ensembl ID")) %>%
+  dplyr::select("Ensembl ID ", "Gene symbol ", "Gene description ", everything()) %>% 
+  dplyr::select(!c("Gene symbol.x", "Gene description.x", "Gene symbol.y", "Gene description.y")) %>% 
+  dplyr::mutate(round(.[, 4:13], digit = 2)) %>%
+  dplyr::mutate(signif(.[,7:8], digit= 2)) %>%
+  dplyr::mutate(signif(.[,12:13], digit= 2)) %>%
+  dplyr::arrange(desc(`log2FC LS`))
+
+######KPARC/KPRP3V shared changes####
+ARC_RP3V_kiss_union_supp <- ARC_kiss_sign_supp %>% 
+  inner_join(POA_kiss_sign_supp, by = c("Ensembl ID" = "Ensembl ID")) %>%
+  anti_join(Three_kiss_union, by = c("Ensembl ID" = "Geneid")) %>% 
+  dplyr::select("Ensembl ID", "Gene symbol.x", "Gene description.x", everything()) %>% 
+  dplyr::select(!c("Gene symbol.y", "Gene description.y")) %>% 
+  dplyr::mutate(round(.[, 4:13], digit = 2)) %>%
+  dplyr::mutate(format(.[,7:8], digit= 2)) %>%
+  dplyr::mutate(signif(.[,12:13], digit= 2)) %>%
+  dplyr::arrange(desc(`log2FC ARC`))
+
+
+#Tables3####
+####Top20 categorization of LS####
+####KPLS ion channels####
+Ion_channel_Septum_supp <- Ion_channel_Septum %>% 
+  dplyr::select(Geneid, Name, description, Mean_all_LS) %>%
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = Name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean CPM" = Mean_all_LS) %>%
+  dplyr::mutate(round(.[, 4], digit = 2)) %>%
+  dplyr::arrange(desc(`Mean CPM`))
+  
+####KPLS transporters####
+Transporter_Septum_supp <- Transporter_Septum %>% 
+  dplyr::select(Geneid, Name, description, Mean_all_LS) %>%
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = Name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean CPM" = Mean_all_LS) %>%
+  dplyr::mutate(round(.[, 4], digit = 2)) %>%
+  dplyr::arrange(desc(`Mean CPM`))
+
+####KPLS transcription factors####
+transcription_factors_Septum_supp <- TF_Septum %>% 
+  dplyr::select(Geneid, Name, description, Mean_all_LS) %>%
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = Name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean CPM" = Mean_all_LS) %>%
+  dplyr::mutate(round(.[, 4], digit = 2)) %>%
+  dplyr::arrange(desc(`Mean CPM`))
+####KPLS neuropeptides/granins####
+Neuropeptide_Septum_supp <- Neuropeptide_Septum %>% 
+  dplyr::select(Geneid, Name, description, Mean_all_LS) %>%
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = Name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean CPM" = Mean_all_LS) %>%
+  dplyr::mutate(round(.[, 4], digit = 2)) %>%
+  dplyr::arrange(desc(`Mean CPM`))
+####KPLS receptors####
+Receptor_Septum_supp <-Receptor_Septum %>% 
+  dplyr::select(Geneid, symbol, description, Mean_all_LS) %>%
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = symbol) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean CPM" = Mean_all_LS) %>%
+  dplyr::mutate(round(.[, 4], digit = 2)) %>%
+  dplyr::arrange(desc(`Mean CPM`))
+###Top20 categorization of ARC####
+####KPARC ion channeARC####
+Ion_channel_ARC_supp <- Ion_channel_ARC %>% 
+  dplyr::select(Geneid, Name, description, Mean_all_ARC) %>%
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = Name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean CPM" = Mean_all_ARC) %>%
+  dplyr::mutate(round(.[, 4], digit = 2)) %>%
+  dplyr::arrange(desc(`Mean CPM`))
+
+####KPARC transporters####
+Transporter_ARC_supp <- Transporter_ARC %>% 
+  dplyr::select(Geneid, Name, description, Mean_all_ARC) %>%
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = Name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean CPM" = Mean_all_ARC) %>%
+  dplyr::mutate(round(.[, 4], digit = 2)) %>%
+  dplyr::arrange(desc(`Mean CPM`))
+
+####KPARC transcription factors####
+transcription_factors_ARC_supp <- TF_ARC %>% 
+  dplyr::select(Geneid, Name, description, Mean_all_ARC) %>%
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = Name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean CPM" = Mean_all_ARC) %>%
+  dplyr::mutate(round(.[, 4], digit = 2)) %>%
+  dplyr::arrange(desc(`Mean CPM`))
+####KPARC neuropeptides/granins####
+Neuropeptide_ARC_supp <- Neuropeptide_ARC %>% 
+  dplyr::select(Geneid, Name, description, Mean_all_ARC) %>%
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = Name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean CPM" = Mean_all_ARC) %>%
+  dplyr::mutate(round(.[, 4], digit = 2)) %>%
+  dplyr::arrange(desc(`Mean CPM`))
+####KPARC receptors####
+Receptor_ARC_supp <-Receptor_ARC %>% 
+  dplyr::select(Geneid, symbol, description, Mean_all_ARC) %>%
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = symbol) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean CPM" = Mean_all_ARC) %>%
+  dplyr::mutate(round(.[, 4], digit = 2)) %>%
+  dplyr::arrange(desc(`Mean CPM`))
+
+###Top20 categorization of RP3V####
+####KPRP3V ion channeRP3V####
+Ion_channel_RP3V_supp <- Ion_channel_POA %>% 
+  dplyr::select(Geneid, Name, description, Mean_all_POA) %>%
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = Name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean CPM" = Mean_all_POA) %>%
+  dplyr::mutate(round(.[, 4], digit = 2)) %>%
+  dplyr::arrange(desc(`Mean CPM`))
+
+####KPRP3V transporters####
+Transporter_RP3V_supp <- Transporter_POA %>% 
+  dplyr::select(Geneid, Name, description, Mean_all_POA) %>%
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = Name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean CPM" = Mean_all_POA) %>%
+  dplyr::mutate(round(.[, 4], digit = 2)) %>%
+  dplyr::arrange(desc(`Mean CPM`))
+
+####KPRP3V transcription factors####
+transcription_factors_RP3V_supp <- TF_POA %>% 
+  dplyr::select(Geneid, Name, description, Mean_all_POA) %>%
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = Name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean CPM" = Mean_all_POA) %>%
+  dplyr::mutate(round(.[, 4], digit = 2)) %>%
+  dplyr::arrange(desc(`Mean CPM`))
+####KPRP3V neuropeptides/granins####
+Neuropeptide_RP3V_supp <- Neuropeptide_POA %>% 
+  dplyr::select(Geneid, Name, description, Mean_all_POA) %>%
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = Name) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean CPM" = Mean_all_POA) %>%
+  dplyr::mutate(round(.[, 4], digit = 2)) %>%
+  dplyr::arrange(desc(`Mean CPM`))
+####KPRP3V receptors####
+Receptor_RP3V_supp <-Receptor_POA %>% 
+  dplyr::select(Geneid, symbol, description, Mean_all_POA) %>%
+  dplyr::rename("Ensembl ID" = Geneid) %>% 
+  dplyr::rename("Gene symbol" = symbol) %>%
+  dplyr::rename("Gene description" = description) %>%
+  dplyr::rename("Mean CPM" = Mean_all_POA) %>%
+  dplyr::mutate(round(.[, 4], digit = 2)) %>%
+  dplyr::arrange(desc(`Mean CPM`))
+
+####Barplot receptor figure 5#####
+
+
+
+chol_receptor_mean <- ddply(CRM_table, c("Name", "Treatment"), summarise,
+                  N    = length(Points),
+                  mean = mean(Points),
+                  SD   = sd(Points),
+                  SEM   = SD / sqrt(N))
+
+dfMuscre_bar <- data.frame(chol_receptor_mean)	
+dlMuscre_bar <-data.frame(CRM_table)	
+
+metaMuscre_bar<-full_join(dfMuscre_bar, dlMuscre_bar, by = c('Name'='Name')) 
+
+dfMuscre_bar$Treatment = factor(dfMuscre_bar$Treatment,
+                        levels = c("Veh", "E2"))
+####GGplot#####
+ggplot(data = dfMuscre_bar, 
+       aes(x=Treatment, y = mean,
+           fill=Treatment))+
+  geom_bar(position = position_dodge(),
+           stat="identity",
+           colour="black",
+           size = 0.05,
+           width =1)+
+  labs(x=NULL, y=NULL)+
+  theme_classic()+
+  scale_y_continuous(expand=c(0, 0), limits = c(0, 180), n.breaks =10)+
+  theme(legend.position="right")+
+  geom_errorbar(aes(ymin=mean-SEM, ymax=mean+SEM), width=0.1, size = 0.05)+
+  geom_point(data=dlMuscre_bar[dlMuscre_bar$Treatment=="Veh",],
+             aes(x=Treatment,y=Points), size = 0.5, shape = 16, stroke = 0.1)+
+  geom_point(data=dlMuscre_bar[dlMuscre_bar$Treatment=="E2",],
+             aes(x=Treatment,y=Points), size = 0.5, shape = 16 , stroke = 0.1)+
+  scale_fill_manual(values = c("#FFE77A", "#2C5F2D"))+
+  labs(title = "Expression of Muscarin receptors in KPLS neurons",
+       y="Expression level (CPM)",
+       fill="Treatment",
+       size = 2)+
+  facet_grid(~ Name,
+             scales = "free_x",
+             space = "free",
+             switch = "x",
+             drop = T)+
+  theme(
+    axis.line.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.line.y = element_line(size = 0.05),
+    axis.ticks.y = element_line(size = 0.05),
+    panel.spacing = unit(0, 'lines'),
+    panel.border = element_blank(),
+    axis.text.x = element_blank(),
+    title = element_text(size = 5, face = "bold"),
+    axis.text.y = element_text(size = 5),
+    axis.text = element_text(color = "black"),
+    strip.background = element_blank(),
+    # plot.margin = margin(t = 20, r=20, b=20, l=30, unit = "pt"),
+    strip.text.x = element_text(angle = 45, size = 5),
+    axis.title.y = element_text(size=5, face="bold"),
+    axis.title.x = element_text(size=5, face="bold"),
+    legend.text = element_text(size=5),
+    legend.title = element_text(size=5),
+    legend.key.size = unit(5, 'pt'),
+    legend.margin=margin(-1,-1,-1,-1),
+    plot.margin = margin(2,2,2,2),
+    plot.title = element_text(hjust = 0.35)
+  )
+ggsave("Muscre_barplot.pdf", width = 60 , height = 70 , units = "mm")
